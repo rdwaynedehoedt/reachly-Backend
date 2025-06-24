@@ -162,6 +162,12 @@ router.get(
   }
 );
 
+// Handle the case where the callback URL is being used as a base URL
+router.get("/callback/auth/login", (req, res) => {
+  console.log("Received request to /callback/auth/login - redirecting to /auth/login");
+  res.redirect("/auth/login");
+});
+
 // Success and failure endpoints
 router.get("/success", (req, res) => {
   console.log("Authentication successful, redirecting to:", process.env.CORS_ORIGIN || "http://localhost:3000");
@@ -515,6 +521,24 @@ router.get("/direct-test", (req, res) => {
   // Redirect to the authorization URL without a redirect_uri
   // This will make Asgardeo use the default redirect URI registered for the client
   res.redirect(authUrl);
+});
+
+// Root handler for the callback URL
+router.get("/callback/*", (req, res) => {
+  console.log("Received request to an unexpected callback path:", req.path);
+  console.log("Original URL:", req.originalUrl);
+  console.log("Query parameters:", req.query);
+  
+  // Extract the path after /callback/
+  const path = req.path.substring("/callback/".length);
+  
+  if (path) {
+    console.log("Redirecting to:", "/" + path);
+    res.redirect("/" + path);
+  } else {
+    console.log("Redirecting to home");
+    res.redirect("/");
+  }
 });
 
 module.exports = router;
