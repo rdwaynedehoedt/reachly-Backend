@@ -1,13 +1,8 @@
 require("dotenv").config();
 
 // Debug environment variables
-console.log("Environment variables:");
-console.log("ASGARDEO_ORGANISATION:", process.env.ASGARDEO_ORGANISATION);
-console.log("ASGARDEO_CLIENT_ID:", process.env.ASGARDEO_CLIENT_ID);
-console.log("ASGARDEO_CLIENT_SECRET:", process.env.ASGARDEO_CLIENT_SECRET ? "Set (not showing value)" : "Not set");
+
 console.log("PORT:", process.env.PORT);
-console.log("CORS_ORIGIN:", process.env.CORS_ORIGIN);
-console.log("SESSION_SECRET:", process.env.SESSION_SECRET ? "Set (not showing value)" : "Not set");
 
 var createError = require('http-errors');
 var express = require('express');
