@@ -29,7 +29,7 @@ passport.use(
         "/oauth2/userinfo",
       clientID: process.env.ASGARDEO_CLIENT_ID,
       clientSecret: process.env.ASGARDEO_CLIENT_SECRET,
-      callbackURL: "http://localhost:5000/auth/callback",
+      callbackURL: process.env.CALLBACK_URL || "http://localhost:5000/auth/callback",
       scope: ["profile", "email"],
     },
     function verify(
