@@ -97,6 +97,10 @@ router.get("/failure", (req, res) => {
 
 // User info endpoint
 router.get("/user", (req, res) => {
+  console.log("Auth check - User authenticated:", req.isAuthenticated());
+  console.log("Auth check - Session:", req.session);
+  console.log("Auth check - Cookies:", req.headers.cookie);
+  
   if (req.isAuthenticated()) {
     res.json({ 
       success: true, 
