@@ -257,28 +257,68 @@ router.get("/debug-callback", (req, res) => {
 
 // Debug endpoint to test Asgardeo configuration
 router.get("/debug-config", (req, res) => {
-  // Get the passport strategy
-  const strategy = passport._strategies['asgardeo'];
-  
-  // Extract configuration (but don't expose secrets)
-  const config = {
-    issuer: strategy._options.issuer,
-    authorizationURL: strategy._options.authorizationURL,
-    tokenURL: strategy._options.tokenURL,
-    userInfoURL: strategy._options.userInfoURL,
-    clientID: strategy._options.clientID ? 'Set' : 'Not set',
-    clientSecret: strategy._options.clientSecret ? 'Set' : 'Not set',
-    callbackURL: strategy._options.callbackURL,
-    scope: strategy._options.scope
-  };
-  
+  try {
+    // Get the passport strategy
+    const strategy = passport._strategies['asgardeo'];
+    
+    if (!strategy || !strategy._options) {
+      return res.json({
+        error: "Strategy not properly initialized",
+        availableStrategies: Object.keys(passport._strategies)
+      });
+    }
+    
+    // Extract configuration (but don't expose secrets)
+    const config = {
+      issuer: strategy._options.issuer || 'Not set',
+      authorizationURL: strategy._options.authorizationURL || 'Not set',
+      tokenURL: strategy._options.tokenURL || 'Not set',
+      userInfoURL: strategy._options.userInfoURL || 'Not set',
+      clientID: strategy._options.clientID ? 'Set' : 'Not set',
+      clientSecret: strategy._options.clientSecret ? 'Set' : 'Not set',
+      callbackURL: strategy._options.callbackURL || 'Not set',
+      scope: strategy._options.scope || []
+    };
+    
+    res.json({
+      config: config,
+      requestUrl: req.protocol + '://' + req.get('host') + req.originalUrl,
+      headers: {
+        host: req.headers.host,
+        origin: req.headers.origin,
+        referer: req.headers.referer
+      },
+      environment: {
+        NODE_ENV: process.env.NODE_ENV,
+        CORS_ORIGIN: process.env.CORS_ORIGIN
+      }
+    });
+  } catch (error) {
+    // Send a safe error response
+    res.status(500).json({
+      error: "Error retrieving configuration",
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Simple debug endpoint
+router.get("/debug-simple", (req, res) => {
   res.json({
-    config: config,
-    requestUrl: req.protocol + '://' + req.get('host') + req.originalUrl,
-    headers: {
+    message: "Auth routes are working",
+    timestamp: new Date().toISOString(),
+    environment: {
+      NODE_ENV: process.env.NODE_ENV || 'Not set',
+      CORS_ORIGIN: process.env.CORS_ORIGIN || 'Not set',
+      CALLBACK_URL: process.env.CALLBACK_URL || 'Not set'
+    },
+    request: {
       host: req.headers.host,
       origin: req.headers.origin,
-      referer: req.headers.referer
+      referer: req.headers.referer,
+      url: req.originalUrl,
+      method: req.method
     }
   });
 });
