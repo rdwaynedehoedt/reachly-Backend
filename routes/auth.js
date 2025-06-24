@@ -11,26 +11,18 @@ if (!process.env.ASGARDEO_ORGANISATION || !process.env.ASGARDEO_CLIENT_ID || !pr
   console.error("Make sure ASGARDEO_ORGANISATION, ASGARDEO_CLIENT_ID, and ASGARDEO_CLIENT_SECRET are set in .env file");
 }
 
-// Helper function to determine the callback URL
-function getCallbackUrl(req) {
-  // If CALLBACK_URL is defined, use it
-  if (process.env.CALLBACK_URL) {
-    console.log("Using environment CALLBACK_URL:", process.env.CALLBACK_URL);
-    return process.env.CALLBACK_URL;
+// Helper function to determine the callback URL based on environment
+function getAppropriateCallbackUrl(req) {
+  // Check if running locally
+  const host = req.headers.host || '';
+  
+  if (host.includes('localhost')) {
+    console.log("Using localhost callback URL for local development");
+    return "http://localhost:5000/auth/callback";
+  } else {
+    console.log("Using production callback URL");
+    return "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
   }
-  
-  // Otherwise, construct it from the request
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-  const host = req.headers.host || 'localhost:5000';
-  
-  // For Choreo deployments, we need to handle the base path
-  const basePath = process.env.NODE_ENV === 'production' ? '/reachly/reachly-backend/v1.0' : '';
-  
-  const constructedUrl = `${protocol}://${host}${basePath}/auth/callback`;
-  console.log("Constructed callback URL from request:", constructedUrl);
-  console.log("Request headers:", req.headers);
-  
-  return constructedUrl;
 }
 
 // Asgardeo Strategy Configuration
@@ -51,6 +43,7 @@ passport.use(
         "/oauth2/userinfo",
       clientID: process.env.ASGARDEO_CLIENT_ID,
       clientSecret: process.env.ASGARDEO_CLIENT_SECRET,
+      // Use a dynamic callback URL that will be overridden in the routes
       callbackURL: process.env.CALLBACK_URL || "http://localhost:5000/auth/callback",
       scope: ["profile", "email"],
     },
@@ -105,19 +98,8 @@ router.get("/login", (req, res, next) => {
   const host = req.headers.host || '';
   console.log("Host header:", host);
   
-  // Determine which callback URL to use based on the host
-  let callbackUrl;
-  
-  if (host.includes('choreoapis.dev')) {
-    // Production Choreo environment
-    callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
-  } else if (host.includes('localhost')) {
-    // Local development
-    callbackUrl = "http://localhost:5000/auth/callback";
-  } else {
-    // Fallback to environment variable or default
-    callbackUrl = process.env.CALLBACK_URL || "http://localhost:5000/auth/callback";
-  }
+  // Use the appropriate callback URL based on environment
+  const callbackUrl = getAppropriateCallbackUrl(req);
   
   console.log("Using callback URL for login:", callbackUrl);
   
@@ -135,23 +117,8 @@ router.get(
   (req, res, next) => {
     console.log("Callback received with query:", req.query);
     
-    // Get the host from the request
-    const host = req.headers.host || '';
-    console.log("Callback host header:", host);
-    
-    // Determine which callback URL to use based on the host
-    let callbackUrl;
-    
-    if (host.includes('choreoapis.dev')) {
-      // Production Choreo environment
-      callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
-    } else if (host.includes('localhost')) {
-      // Local development
-      callbackUrl = "http://localhost:5000/auth/callback";
-    } else {
-      // Fallback to environment variable or default
-      callbackUrl = process.env.CALLBACK_URL || "http://localhost:5000/auth/callback";
-    }
+    // Use the same callback URL determination logic
+    const callbackUrl = getAppropriateCallbackUrl(req);
     
     console.log("Using callback URL for callback handler:", callbackUrl);
     
@@ -255,7 +222,7 @@ router.post("/logout", function (req, res, next) {
 
 // Debug endpoint to check callback URL
 router.get("/debug-callback", (req, res) => {
-  const callbackUrl = getCallbackUrl(req);
+  const callbackUrl = getAppropriateCallbackUrl(req);
   
   res.json({
     callbackUrl: callbackUrl,
@@ -268,6 +235,34 @@ router.get("/debug-callback", (req, res) => {
       NODE_ENV: process.env.NODE_ENV,
       CALLBACK_URL: process.env.CALLBACK_URL,
       CORS_ORIGIN: process.env.CORS_ORIGIN
+    }
+  });
+});
+
+// Debug endpoint to test Asgardeo configuration
+router.get("/debug-config", (req, res) => {
+  // Get the passport strategy
+  const strategy = passport._strategies['asgardeo'];
+  
+  // Extract configuration (but don't expose secrets)
+  const config = {
+    issuer: strategy._options.issuer,
+    authorizationURL: strategy._options.authorizationURL,
+    tokenURL: strategy._options.tokenURL,
+    userInfoURL: strategy._options.userInfoURL,
+    clientID: strategy._options.clientID ? 'Set' : 'Not set',
+    clientSecret: strategy._options.clientSecret ? 'Set' : 'Not set',
+    callbackURL: strategy._options.callbackURL,
+    scope: strategy._options.scope
+  };
+  
+  res.json({
+    config: config,
+    requestUrl: req.protocol + '://' + req.get('host') + req.originalUrl,
+    headers: {
+      host: req.headers.host,
+      origin: req.headers.origin,
+      referer: req.headers.referer
     }
   });
 });
