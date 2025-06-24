@@ -11,12 +11,16 @@ if (!process.env.ASGARDEO_ORGANISATION || !process.env.ASGARDEO_CLIENT_ID || !pr
   console.error("Make sure ASGARDEO_ORGANISATION, ASGARDEO_CLIENT_ID, and ASGARDEO_CLIENT_SECRET are set in .env file");
 }
 
+// Helper function to determine if running locally
+function isLocalEnvironment(req) {
+  const host = req.headers.host || '';
+  return host.includes('localhost') || host.includes('127.0.0.1');
+}
+
 // Helper function to determine the callback URL based on environment
 function getAppropriateCallbackUrl(req) {
   // Check if running locally
-  const host = req.headers.host || '';
-  
-  if (host.includes('localhost')) {
+  if (isLocalEnvironment(req)) {
     console.log("Using localhost callback URL for local development");
     return "http://localhost:5000/auth/callback";
   } else {
@@ -43,8 +47,8 @@ passport.use(
         "/oauth2/userinfo",
       clientID: process.env.ASGARDEO_CLIENT_ID,
       clientSecret: process.env.ASGARDEO_CLIENT_SECRET,
-      // Use a dynamic callback URL that will be overridden in the routes
-      callbackURL: process.env.CALLBACK_URL || "http://localhost:5000/auth/callback",
+      // Use the fixed callback URL that's registered in Asgardeo
+      callbackURL: "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback",
       scope: ["profile", "email"],
     },
     function verify(
@@ -98,18 +102,29 @@ router.get("/login", (req, res, next) => {
   const host = req.headers.host || '';
   console.log("Host header:", host);
   
-  // Use the appropriate callback URL based on environment
-  const callbackUrl = getAppropriateCallbackUrl(req);
-  
-  console.log("Using callback URL for login:", callbackUrl);
-  
-  // Create a custom passport authenticator with the selected callback URL
-  const authenticator = passport.authenticate("asgardeo", {
-    callbackURL: callbackUrl
-  });
-  
-  // Use the custom authenticator
-  authenticator(req, res, next);
+  // Check if running locally
+  if (isLocalEnvironment(req)) {
+    // For local development, use a different strategy configuration
+    console.log("Using local development configuration");
+    
+    const authenticator = passport.authenticate("asgardeo", {
+      callbackURL: "http://localhost:5000/auth/callback"
+    });
+    
+    authenticator(req, res, next);
+  } else {
+    // For production, use the fixed callback URL
+    console.log("Using production configuration");
+    
+    // Store the callback URL in the session for later use
+    req.session.callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+    
+    const authenticator = passport.authenticate("asgardeo", {
+      callbackURL: "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback"
+    });
+    
+    authenticator(req, res, next);
+  }
 });
 
 router.get(
@@ -117,18 +132,19 @@ router.get(
   (req, res, next) => {
     console.log("Callback received with query:", req.query);
     
-    // Use the same callback URL determination logic
-    const callbackUrl = getAppropriateCallbackUrl(req);
-    
-    console.log("Using callback URL for callback handler:", callbackUrl);
-    
-    // Store it in the request for the authenticator to use
-    req.authCallbackURL = callbackUrl;
+    // Check if running locally
+    if (isLocalEnvironment(req)) {
+      console.log("Using local development callback URL");
+      req.authCallbackURL = "http://localhost:5000/auth/callback";
+    } else {
+      console.log("Using production callback URL");
+      req.authCallbackURL = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+    }
     
     next();
   },
   (req, res, next) => {
-    // Create a custom passport authenticator with the dynamic callback URL
+    // Create a custom passport authenticator with the appropriate callback URL
     const authenticator = passport.authenticate("asgardeo", {
       callbackURL: req.authCallbackURL,
       successRedirect: "/auth/success",

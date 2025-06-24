@@ -22,8 +22,26 @@ var authRouter = require("./routes/auth");
 var app = express();
 
 // Enable CORS for frontend
+const corsOrigins = [
+  'http://localhost:3000',
+  'https://reachly-frontend.vercel.app',
+  'https://reachly-frontend-git-main-dwaynes-projects-941c4222.vercel.app'
+];
+
+console.log("CORS origins:", corsOrigins);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (corsOrigins.indexOf(origin) !== -1 || process.env.CORS_ORIGIN === origin) {
+      callback(null, true);
+    } else {
+      console.log("CORS blocked for origin:", origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
