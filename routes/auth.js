@@ -11,6 +11,28 @@ if (!process.env.ASGARDEO_ORGANISATION || !process.env.ASGARDEO_CLIENT_ID || !pr
   console.error("Make sure ASGARDEO_ORGANISATION, ASGARDEO_CLIENT_ID, and ASGARDEO_CLIENT_SECRET are set in .env file");
 }
 
+// Helper function to determine the callback URL
+function getCallbackUrl(req) {
+  // If CALLBACK_URL is defined, use it
+  if (process.env.CALLBACK_URL) {
+    console.log("Using environment CALLBACK_URL:", process.env.CALLBACK_URL);
+    return process.env.CALLBACK_URL;
+  }
+  
+  // Otherwise, construct it from the request
+  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+  const host = req.headers.host || 'localhost:5000';
+  
+  // For Choreo deployments, we need to handle the base path
+  const basePath = process.env.NODE_ENV === 'production' ? '/reachly/reachly-backend/v1.0' : '';
+  
+  const constructedUrl = `${protocol}://${host}${basePath}/auth/callback`;
+  console.log("Constructed callback URL from request:", constructedUrl);
+  console.log("Request headers:", req.headers);
+  
+  return constructedUrl;
+}
+
 // Asgardeo Strategy Configuration
 passport.use(
   new AsgardeoStrategy(
@@ -78,20 +100,77 @@ passport.serializeUser(function (user, cb) {
 // Authentication routes
 router.get("/login", (req, res, next) => {
   console.log("Login request received");
-  console.log("Callback URL configured:", process.env.CALLBACK_URL || "http://localhost:5000/auth/callback");
-  passport.authenticate("asgardeo")(req, res, next);
+  
+  // Get the host from the request
+  const host = req.headers.host || '';
+  console.log("Host header:", host);
+  
+  // Determine which callback URL to use based on the host
+  let callbackUrl;
+  
+  if (host.includes('choreoapis.dev')) {
+    // Production Choreo environment
+    callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+  } else if (host.includes('localhost')) {
+    // Local development
+    callbackUrl = "http://localhost:5000/auth/callback";
+  } else {
+    // Fallback to environment variable or default
+    callbackUrl = process.env.CALLBACK_URL || "http://localhost:5000/auth/callback";
+  }
+  
+  console.log("Using callback URL for login:", callbackUrl);
+  
+  // Create a custom passport authenticator with the selected callback URL
+  const authenticator = passport.authenticate("asgardeo", {
+    callbackURL: callbackUrl
+  });
+  
+  // Use the custom authenticator
+  authenticator(req, res, next);
 });
 
 router.get(
   "/callback",
   (req, res, next) => {
     console.log("Callback received with query:", req.query);
+    
+    // Get the host from the request
+    const host = req.headers.host || '';
+    console.log("Callback host header:", host);
+    
+    // Determine which callback URL to use based on the host
+    let callbackUrl;
+    
+    if (host.includes('choreoapis.dev')) {
+      // Production Choreo environment
+      callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+    } else if (host.includes('localhost')) {
+      // Local development
+      callbackUrl = "http://localhost:5000/auth/callback";
+    } else {
+      // Fallback to environment variable or default
+      callbackUrl = process.env.CALLBACK_URL || "http://localhost:5000/auth/callback";
+    }
+    
+    console.log("Using callback URL for callback handler:", callbackUrl);
+    
+    // Store it in the request for the authenticator to use
+    req.authCallbackURL = callbackUrl;
+    
     next();
   },
-  passport.authenticate("asgardeo", {
-    successRedirect: "/auth/success",
-    failureRedirect: "/auth/failure",
-  })
+  (req, res, next) => {
+    // Create a custom passport authenticator with the dynamic callback URL
+    const authenticator = passport.authenticate("asgardeo", {
+      callbackURL: req.authCallbackURL,
+      successRedirect: "/auth/success",
+      failureRedirect: "/auth/failure",
+    });
+    
+    // Use the custom authenticator
+    authenticator(req, res, next);
+  }
 );
 
 // Success and failure endpoints
@@ -171,6 +250,25 @@ router.post("/logout", function (req, res, next) {
       success: true,
       logoutUrl: logoutUrl
     });
+  });
+});
+
+// Debug endpoint to check callback URL
+router.get("/debug-callback", (req, res) => {
+  const callbackUrl = getCallbackUrl(req);
+  
+  res.json({
+    callbackUrl: callbackUrl,
+    headers: {
+      host: req.headers.host,
+      origin: req.headers.origin,
+      referer: req.headers.referer
+    },
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      CALLBACK_URL: process.env.CALLBACK_URL,
+      CORS_ORIGIN: process.env.CORS_ORIGIN
+    }
   });
 });
 
