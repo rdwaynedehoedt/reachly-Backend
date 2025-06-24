@@ -76,10 +76,18 @@ passport.serializeUser(function (user, cb) {
   });
   
 // Authentication routes
-router.get("/login", passport.authenticate("asgardeo"));
+router.get("/login", (req, res, next) => {
+  console.log("Login request received");
+  console.log("Callback URL configured:", process.env.CALLBACK_URL || "http://localhost:5000/auth/callback");
+  passport.authenticate("asgardeo")(req, res, next);
+});
 
 router.get(
   "/callback",
+  (req, res, next) => {
+    console.log("Callback received with query:", req.query);
+    next();
+  },
   passport.authenticate("asgardeo", {
     successRedirect: "/auth/success",
     failureRedirect: "/auth/failure",
@@ -88,6 +96,7 @@ router.get(
 
 // Success and failure endpoints
 router.get("/success", (req, res) => {
+  console.log("Authentication successful, redirecting to:", process.env.CORS_ORIGIN || "http://localhost:3000");
   res.redirect(process.env.CORS_ORIGIN || "http://localhost:3000");
 });
 
