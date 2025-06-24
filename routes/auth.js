@@ -165,7 +165,12 @@ router.get(
 // Handle the case where the callback URL is being used as a base URL
 router.get("/callback/auth/login", (req, res) => {
   console.log("Received request to /callback/auth/login - redirecting to /auth/login");
-  res.redirect("/auth/login");
+  
+  // Get the base path from the environment or use a default
+  const basePath = process.env.BASE_PATH || "/reachly/reachly-backend/v1.0";
+  
+  // Redirect to the full path
+  res.redirect(`${basePath}/auth/login`);
 });
 
 // Success and failure endpoints
@@ -529,15 +534,18 @@ router.get("/callback/*", (req, res) => {
   console.log("Original URL:", req.originalUrl);
   console.log("Query parameters:", req.query);
   
+  // Get the base path from the environment or use a default
+  const basePath = process.env.BASE_PATH || "/reachly/reachly-backend/v1.0";
+  
   // Extract the path after /callback/
   const path = req.path.substring("/callback/".length);
   
   if (path) {
-    console.log("Redirecting to:", "/" + path);
-    res.redirect("/" + path);
+    console.log("Redirecting to:", `${basePath}/${path}`);
+    res.redirect(`${basePath}/${path}`);
   } else {
-    console.log("Redirecting to home");
-    res.redirect("/");
+    console.log("Redirecting to base path");
+    res.redirect(basePath);
   }
 });
 
