@@ -451,5 +451,71 @@ router.get("/callback-simple", async (req, res) => {
   }
 });
 
+// Test endpoint to display all possible callback URLs
+router.get("/test-all-urls", (req, res) => {
+  // Generate all possible variations of the callback URL
+  const baseUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev";
+  
+  const possibleUrls = [
+    // Original URL
+    `${baseUrl}/reachly/reachly-backend/v1.0/auth/callback`,
+    
+    // Without trailing slash
+    `${baseUrl}/reachly/reachly-backend/v1.0/auth/callback`,
+    
+    // With trailing slash
+    `${baseUrl}/reachly/reachly-backend/v1.0/auth/callback/`,
+    
+    // Simple callback
+    `${baseUrl}/reachly/reachly-backend/v1.0/auth/callback-simple`,
+    
+    // Without v1.0
+    `${baseUrl}/reachly/reachly-backend/auth/callback`,
+    
+    // Without reachly-backend
+    `${baseUrl}/reachly/auth/callback`,
+    
+    // Just the domain
+    `${baseUrl}/auth/callback`,
+    
+    // With development
+    `${baseUrl}-dev/reachly/reachly-backend/v1.0/auth/callback`,
+    
+    // With www
+    `https://www.606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback`,
+    
+    // HTTP instead of HTTPS
+    `http://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback`
+  ];
+  
+  // Create HTML with links to test each URL
+  let html = '<h1>Test All Possible Callback URLs</h1>';
+  html += '<p>Click each link to test if it works with Asgardeo:</p>';
+  html += '<ul>';
+  
+  possibleUrls.forEach((url, index) => {
+    const authUrl = `${ASGARDEO_BASE_URL}${process.env.ASGARDEO_ORGANISATION}/oauth2/authorize?response_type=code&client_id=${process.env.ASGARDEO_CLIENT_ID}&redirect_uri=${encodeURIComponent(url)}&scope=openid%20profile%20email&state=test-${index}`;
+    
+    html += `<li><a href="${authUrl}" target="_blank">${url}</a></li>`;
+  });
+  
+  html += '</ul>';
+  html += '<p>Add these URLs to your Asgardeo authorized redirect URLs and try again.</p>';
+  
+  res.send(html);
+});
+
+// Direct test route with minimal parameters
+router.get("/direct-test", (req, res) => {
+  // Minimal authorization URL with just the required parameters
+  const authUrl = `${ASGARDEO_BASE_URL}${process.env.ASGARDEO_ORGANISATION}/oauth2/authorize?response_type=code&client_id=${process.env.ASGARDEO_CLIENT_ID}&scope=openid`;
+  
+  console.log("Direct test - Redirecting to:", authUrl);
+  
+  // Redirect to the authorization URL without a redirect_uri
+  // This will make Asgardeo use the default redirect URI registered for the client
+  res.redirect(authUrl);
+});
+
 module.exports = router;
   
