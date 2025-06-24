@@ -117,10 +117,16 @@ router.get("/login", (req, res, next) => {
     console.log("Using production configuration");
     
     // Store the callback URL in the session for later use
-    req.session.callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+    const callbackUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+    req.session.callbackUrl = callbackUrl;
+    
+    // Log the exact URL for debugging
+    console.log("EXACT CALLBACK URL:", callbackUrl);
+    console.log("URL LENGTH:", callbackUrl.length);
+    console.log("URL CHARACTERS:", [...callbackUrl].map(c => c.charCodeAt(0)));
     
     const authenticator = passport.authenticate("asgardeo", {
-      callbackURL: "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback"
+      callbackURL: callbackUrl
     });
     
     authenticator(req, res, next);
@@ -321,6 +327,128 @@ router.get("/debug-simple", (req, res) => {
       method: req.method
     }
   });
+});
+
+// Test endpoint to check the exact callback URL
+router.get("/test-callback-url", (req, res) => {
+  const registeredUrl = "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
+  const urlFromEnv = process.env.CALLBACK_URL;
+  
+  res.json({
+    registeredUrl: {
+      value: registeredUrl,
+      length: registeredUrl.length,
+      characters: [...registeredUrl].map(c => ({ char: c, code: c.charCodeAt(0) }))
+    },
+    envUrl: {
+      value: urlFromEnv,
+      length: urlFromEnv ? urlFromEnv.length : 0,
+      characters: urlFromEnv ? [...urlFromEnv].map(c => ({ char: c, code: c.charCodeAt(0) })) : []
+    },
+    match: registeredUrl === urlFromEnv
+  });
+});
+
+// Simple login route for testing
+router.get("/login-simple", (req, res) => {
+  // Construct the authorization URL manually
+  const authParams = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.ASGARDEO_CLIENT_ID,
+    redirect_uri: 'https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback-simple',
+    scope: 'openid profile email',
+    state: 'simple-test'
+  });
+  
+  const authUrl = `${ASGARDEO_BASE_URL}${process.env.ASGARDEO_ORGANISATION}/oauth2/authorize?${authParams.toString()}`;
+  
+  console.log("Simple login - Redirecting to:", authUrl);
+  
+  // Redirect to the authorization URL
+  res.redirect(authUrl);
+});
+
+// Simple callback handler for testing
+router.get("/callback-simple", async (req, res) => {
+  try {
+    console.log("Simple callback received with query:", req.query);
+    
+    // Check if there's an error
+    if (req.query.error) {
+      console.error("OAuth error:", req.query.error, req.query.error_description);
+      return res.status(400).json({
+        error: req.query.error,
+        error_description: req.query.error_description
+      });
+    }
+    
+    // Check if there's a code
+    if (!req.query.code) {
+      console.error("No authorization code received");
+      return res.status(400).json({ error: "No authorization code received" });
+    }
+    
+    // Exchange the code for tokens
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: String(req.query.code),
+      redirect_uri: 'https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback-simple',
+      client_id: process.env.ASGARDEO_CLIENT_ID,
+      client_secret: process.env.ASGARDEO_CLIENT_SECRET
+    });
+    
+    const tokenUrl = `${ASGARDEO_BASE_URL}${process.env.ASGARDEO_ORGANISATION}/oauth2/token`;
+    
+    console.log("Requesting tokens from:", tokenUrl);
+    
+    // Make the token request
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: tokenParams.toString()
+    });
+    
+    const tokenData = await response.json();
+    
+    console.log("Token response status:", response.status);
+    
+    if (!response.ok) {
+      console.error("Token request failed:", tokenData);
+      return res.status(response.status).json(tokenData);
+    }
+    
+    console.log("Tokens received successfully");
+    
+    // Store tokens in session
+    req.session.accessToken = tokenData.access_token;
+    req.session.idToken = tokenData.id_token;
+    req.session.refreshToken = tokenData.refresh_token;
+    
+    // Get user info
+    const userInfoUrl = `${ASGARDEO_BASE_URL}${process.env.ASGARDEO_ORGANISATION}/oauth2/userinfo`;
+    
+    const userInfoResponse = await fetch(userInfoUrl, {
+      headers: {
+        'Authorization': `Bearer ${tokenData.access_token}`
+      }
+    });
+    
+    const userData = await userInfoResponse.json();
+    
+    console.log("User info received");
+    
+    // Store user data in session
+    req.session.user = userData;
+    req.session.isAuthenticated = true;
+    
+    // Redirect to frontend
+    res.redirect(process.env.CORS_ORIGIN || "http://localhost:3000");
+  } catch (error) {
+    console.error("Error in simple callback:", error);
+    res.status(500).json({ error: "Internal server error", message: error.message });
+  }
 });
 
 module.exports = router;
