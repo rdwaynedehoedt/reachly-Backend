@@ -26,7 +26,9 @@ const corsOrigins = [
   'http://localhost:3000',
   'https://reachly-frontend.vercel.app',
   'https://reachly-frontend-git-main-dwaynes-projects-941c4222.vercel.app',
-  'https://reachly-frontend-c8kz5y8ay-dwaynes-projects-941c4222.vercel.app'
+  'https://reachly-frontend-c8kz5y8ay-dwaynes-projects-941c4222.vercel.app',
+  // Add wildcard for development domains
+  /^https:\/\/reachly-frontend-.*-dwaynes-projects-.*\.vercel\.app$/
 ];
 
 console.log("CORS origins:", corsOrigins);
@@ -39,7 +41,17 @@ app.use(cors({
     // Log all origin attempts for debugging
     console.log("Request origin:", origin);
     
-    if (corsOrigins.indexOf(origin) !== -1 || process.env.CORS_ORIGIN === origin) {
+    // Check if origin matches any of the allowed origins
+    const isAllowed = corsOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin || origin === process.env.CORS_ORIGIN;
+      } else if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
       console.log("CORS allowed for origin:", origin);
       callback(null, true);
     } else {
