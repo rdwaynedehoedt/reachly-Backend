@@ -25,7 +25,8 @@ var app = express();
 const corsOrigins = [
   'http://localhost:3000',
   'https://reachly-frontend.vercel.app',
-  'https://reachly-frontend-git-main-dwaynes-projects-941c4222.vercel.app'
+  'https://reachly-frontend-git-main-dwaynes-projects-941c4222.vercel.app',
+  'https://reachly-frontend-c8kz5y8ay-dwaynes-projects-941c4222.vercel.app'
 ];
 
 console.log("CORS origins:", corsOrigins);
@@ -35,7 +36,11 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl requests)
     if (!origin) return callback(null, true);
     
+    // Log all origin attempts for debugging
+    console.log("Request origin:", origin);
+    
     if (corsOrigins.indexOf(origin) !== -1 || process.env.CORS_ORIGIN === origin) {
+      console.log("CORS allowed for origin:", origin);
       callback(null, true);
     } else {
       console.log("CORS blocked for origin:", origin);

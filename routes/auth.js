@@ -25,6 +25,7 @@ function getAppropriateCallbackUrl(req) {
     return "http://localhost:5000/auth/callback";
   } else {
     console.log("Using production callback URL");
+    // Make sure we use the exact URL that's registered in Asgardeo
     return "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback";
   }
 }
@@ -102,6 +103,10 @@ router.get("/login", (req, res, next) => {
   const host = req.headers.host || '';
   console.log("Host header:", host);
   
+  // Get the referrer to understand where the request came from
+  const referrer = req.headers.referer || '';
+  console.log("Referrer:", referrer);
+  
   // Check if running locally
   if (isLocalEnvironment(req)) {
     // For local development, use a different strategy configuration
@@ -124,6 +129,16 @@ router.get("/login", (req, res, next) => {
     console.log("EXACT CALLBACK URL:", callbackUrl);
     console.log("URL LENGTH:", callbackUrl.length);
     console.log("URL CHARACTERS:", [...callbackUrl].map(c => c.charCodeAt(0)));
+    
+    // Check if the request path has any extra segments that might cause issues
+    const originalUrl = req.originalUrl;
+    console.log("Original URL:", originalUrl);
+    
+    // If the URL has extra path segments like /auth/login/extra/path
+    // we need to handle that differently
+    if (originalUrl.split('/').length > 3) {
+      console.log("WARNING: Request has extra path segments that might cause issues with callback URL");
+    }
     
     const authenticator = passport.authenticate("asgardeo", {
       callbackURL: callbackUrl
@@ -162,15 +177,24 @@ router.get(
   }
 );
 
-// Handle the case where the callback URL is being used as a base URL
+// Special handler for the problematic URL pattern
 router.get("/callback/auth/login", (req, res) => {
-  console.log("Received request to /callback/auth/login - redirecting to /auth/login");
+  console.log("Handling special case: /callback/auth/login");
   
   // Get the base path from the environment or use a default
   const basePath = process.env.BASE_PATH || "/reachly/reachly-backend/v1.0";
   
-  // Redirect to the full path
-  res.redirect(`${basePath}/auth/login`);
+  // Get the protocol and host
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers.host;
+  
+  // Construct the correct login URL
+  const loginUrl = `${protocol}://${host}${basePath}/auth/login`;
+  
+  console.log("Redirecting to the correct login URL:", loginUrl);
+  
+  // Redirect to the correct login URL
+  res.redirect(loginUrl);
 });
 
 // Success and failure endpoints
@@ -528,7 +552,7 @@ router.get("/direct-test", (req, res) => {
   res.redirect(authUrl);
 });
 
-// Root handler for the callback URL
+// Root handler for the callback URL - update to handle all paths under callback more robustly
 router.get("/callback/*", (req, res) => {
   console.log("Received request to an unexpected callback path:", req.path);
   console.log("Original URL:", req.originalUrl);
@@ -541,12 +565,55 @@ router.get("/callback/*", (req, res) => {
   const path = req.path.substring("/callback/".length);
   
   if (path) {
-    console.log("Redirecting to:", `${basePath}/${path}`);
-    res.redirect(`${basePath}/${path}`);
+    // Make sure we're using the full URL with protocol and host
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers.host;
+    const redirectUrl = `${protocol}://${host}${basePath}/${path}`;
+    
+    console.log("Redirecting to:", redirectUrl);
+    res.redirect(redirectUrl);
   } else {
     console.log("Redirecting to base path");
     res.redirect(basePath);
   }
+});
+
+// Debug endpoint to check the exact URL structure
+router.get("/debug-url-structure", (req, res) => {
+  // Get all relevant information about the request
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers.host;
+  const path = req.path;
+  const originalUrl = req.originalUrl;
+  const fullUrl = `${protocol}://${host}${originalUrl}`;
+  
+  // Get the base path from the environment or use a default
+  const basePath = process.env.BASE_PATH || "/reachly/reachly-backend/v1.0";
+  
+  // Construct various possible callback URLs
+  const callbackUrls = {
+    standard: `${protocol}://${host}${basePath}/auth/callback`,
+    withoutBasePath: `${protocol}://${host}/auth/callback`,
+    registered: "https://606464b5-77c7-4bb1-a1b9-9d05cefa3519-dev.e1-us-east-azure.choreoapis.dev/reachly/reachly-backend/v1.0/auth/callback"
+  };
+  
+  res.json({
+    request: {
+      protocol,
+      host,
+      path,
+      originalUrl,
+      fullUrl,
+      headers: req.headers
+    },
+    environment: {
+      NODE_ENV: process.env.NODE_ENV,
+      CORS_ORIGIN: process.env.CORS_ORIGIN,
+      BASE_PATH: basePath
+    },
+    callbackUrls,
+    note: "Check if the 'registered' URL matches what's configured in Asgardeo"
+  });
 });
 
 module.exports = router;
