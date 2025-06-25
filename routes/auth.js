@@ -17,6 +17,36 @@ function isLocalEnvironment(req) {
   return host.includes('localhost') || host.includes('127.0.0.1');
 }
 
+// Helper function to normalize paths and prevent duplication
+function normalizePath(path) {
+  // Remove any duplicate instances of /reachly/reachly-backend/v1.0
+  const normalizedPath = path.replace(/\/reachly\/reachly-backend\/v1.0(\/reachly\/reachly-backend\/v1.0)+/, '/reachly/reachly-backend/v1.0');
+  
+  console.log(`Path normalization: "${path}" -> "${normalizedPath}"`);
+  return normalizedPath;
+}
+
+// Add a middleware to handle path normalization for all routes
+router.use((req, res, next) => {
+  const originalUrl = req.originalUrl;
+  
+  // Check if the URL has duplicate path segments
+  if (originalUrl.includes('/reachly/reachly-backend/v1.0/reachly/reachly-backend/v1.0')) {
+    console.log("Detected duplicate path segments in URL:", originalUrl);
+    
+    // Normalize the path
+    const normalizedPath = normalizePath(originalUrl);
+    
+    // If the path was changed, redirect to the normalized path
+    if (normalizedPath !== originalUrl) {
+      console.log("Redirecting to normalized path:", normalizedPath);
+      return res.redirect(normalizedPath);
+    }
+  }
+  
+  next();
+});
+
 // Helper function to determine the callback URL based on environment
 function getAppropriateCallbackUrl(req) {
   // Check if running locally
@@ -189,7 +219,10 @@ router.get("/callback/auth/login", (req, res) => {
   const host = req.headers.host;
   
   // Construct the correct login URL
-  const loginUrl = `${protocol}://${host}${basePath}/auth/login`;
+  let loginUrl = `${protocol}://${host}${basePath}/auth/login`;
+  
+  // Normalize the URL to prevent path duplication
+  loginUrl = normalizePath(loginUrl);
   
   console.log("Redirecting to the correct login URL:", loginUrl);
   
