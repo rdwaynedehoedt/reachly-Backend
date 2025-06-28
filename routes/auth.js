@@ -6,9 +6,25 @@ var qs = require("querystring");
 var router = express.Router();
 
 // Check if required environment variables are set
-if (!process.env.ASGARDEO_ORGANISATION || !process.env.ASGARDEO_CLIENT_ID || !process.env.ASGARDEO_CLIENT_SECRET) {
+const asgardeoOrg = process.env.ASGARDEO_ORGANISATION;
+const asgardeoClientId = process.env.ASGARDEO_CLIENT_ID;
+const asgardeoClientSecret = process.env.ASGARDEO_CLIENT_SECRET;
+
+if (!asgardeoOrg || !asgardeoClientId || !asgardeoClientSecret) {
   console.error("Missing required environment variables for Asgardeo configuration");
   console.error("Make sure ASGARDEO_ORGANISATION, ASGARDEO_CLIENT_ID, and ASGARDEO_CLIENT_SECRET are set in .env file");
+  
+  // Create a dummy router that returns an error for all auth routes
+  router.all("*", (req, res) => {
+    res.status(500).json({
+      error: "Authentication service is not properly configured",
+      message: "Missing required environment variables. Please check server configuration."
+    });
+  });
+  
+  // Export the router early to avoid initializing Asgardeo with invalid config
+  module.exports = router;
+  return;
 }
 
 // Helper function to determine the callback URL based on environment
@@ -30,19 +46,19 @@ passport.use(
   new AsgardeoStrategy(
     {
       issuer:
-        ASGARDEO_BASE_URL + process.env.ASGARDEO_ORGANISATION + "/oauth2/token",
+        ASGARDEO_BASE_URL + asgardeoOrg + "/oauth2/token",
       authorizationURL:
         ASGARDEO_BASE_URL +
-        process.env.ASGARDEO_ORGANISATION +
+        asgardeoOrg +
         "/oauth2/authorize",
       tokenURL:
-        ASGARDEO_BASE_URL + process.env.ASGARDEO_ORGANISATION + "/oauth2/token",
+        ASGARDEO_BASE_URL + asgardeoOrg + "/oauth2/token",
       userInfoURL:
         ASGARDEO_BASE_URL +
-        process.env.ASGARDEO_ORGANISATION +
+        asgardeoOrg +
         "/oauth2/userinfo",
-      clientID: process.env.ASGARDEO_CLIENT_ID,
-      clientSecret: process.env.ASGARDEO_CLIENT_SECRET,
+      clientID: asgardeoClientId,
+      clientSecret: asgardeoClientSecret,
       // Use a dynamic callback URL that will be overridden in the routes
       callbackURL: process.env.CALLBACK_URL || "http://localhost:5000/auth/callback",
       scope: ["profile", "email"],
@@ -142,7 +158,9 @@ router.get(
 
 // Success and failure endpoints
 router.get("/success", (req, res) => {
-  console.log("Authentication successful, redirecting to:", process.env.CORS_ORIGIN || "http://localhost:3000");
+  console.log("Authentication successful, redirecting to frontend");
+  // Redirect to the main page instead of just the base URL
+  // This ensures the user lands on the "Coming Soon" page after authentication
   res.redirect(process.env.CORS_ORIGIN || "http://localhost:3000");
 });
 
@@ -196,8 +214,8 @@ router.post("/logout", function (req, res, next) {
     
     // Properly encode all parameters
     const postLogoutRedirectUri = encodeURIComponent(fullRedirectUri);
-    const clientId = encodeURIComponent(process.env.ASGARDEO_CLIENT_ID);
-    const organisation = encodeURIComponent(process.env.ASGARDEO_ORGANISATION);
+    const clientId = encodeURIComponent(asgardeoClientId);
+    const organisation = encodeURIComponent(asgardeoOrg);
     
     // Construct the logout URL
     let logoutUrl = `${ASGARDEO_BASE_URL}${organisation}/oidc/logout?post_logout_redirect_uri=${postLogoutRedirectUri}&client_id=${clientId}`;
@@ -246,24 +264,25 @@ router.get("/debug-config", (req, res) => {
   
   // Extract configuration (but don't expose secrets)
   const config = {
-    issuer: strategy._options.issuer,
-    authorizationURL: strategy._options.authorizationURL,
-    tokenURL: strategy._options.tokenURL,
-    userInfoURL: strategy._options.userInfoURL,
-    clientID: strategy._options.clientID ? 'Set' : 'Not set',
-    clientSecret: strategy._options.clientSecret ? 'Set' : 'Not set',
-    callbackURL: strategy._options.callbackURL,
-    scope: strategy._options.scope
+    issuer: strategy?._oauth2?._authorizeUrl ? `${ASGARDEO_BASE_URL}${asgardeoOrg}/oauth2/token` : 'Not configured',
+    authorizationURL: strategy?._oauth2?._authorizeUrl || 'Not configured',
+    tokenURL: strategy?._oauth2?._accessTokenUrl || 'Not configured',
+    userInfoURL: strategy?._userInfoURL || 'Not configured',
+    callbackURL: strategy?._callbackURL || 'Not configured',
+    clientID: asgardeoClientId ? 'Configured' : 'Not configured',
+    clientSecret: asgardeoClientSecret ? 'Configured' : 'Not configured',
+    scope: strategy?._scope || ['Not configured'],
+    environment: {
+      NODE_ENV: process.env.NODE_ENV || 'Not set',
+      PORT: process.env.PORT || 'Not set',
+      CORS_ORIGIN: process.env.CORS_ORIGIN || 'Not set',
+      CALLBACK_URL: process.env.CALLBACK_URL || 'Not set'
+    }
   };
   
   res.json({
-    config: config,
-    requestUrl: req.protocol + '://' + req.get('host') + req.originalUrl,
-    headers: {
-      host: req.headers.host,
-      origin: req.headers.origin,
-      referer: req.headers.referer
-    }
+    success: true,
+    config: config
   });
 });
 
