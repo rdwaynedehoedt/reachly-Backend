@@ -1,10 +1,13 @@
-require("dotenv").config();
-
+// Environment variables are now loaded in bin/www
+require('dotenv').config();
 // Debug environment variables
 console.log("PORT:", process.env.PORT);
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("CORS_ORIGIN:", process.env.CORS_ORIGIN);
 console.log("CALLBACK_URL:", process.env.CALLBACK_URL);
+console.log("ASGARDEO_ORGANISATION:", process.env.ASGARDEO_ORGANISATION ? "Set" : "Not set");
+console.log("ASGARDEO_CLIENT_ID:", process.env.ASGARDEO_CLIENT_ID ? "Set" : "Not set");
+console.log("ASGARDEO_CLIENT_SECRET:", process.env.ASGARDEO_CLIENT_SECRET ? "Set" : "Not set");
 
 var createError = require('http-errors');
 var express = require('express');
