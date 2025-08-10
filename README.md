@@ -1,115 +1,54 @@
-# Reachly Backend
+# Reachly Backend Server
 
-Backend service for Reachly - a B2B lead generation SaaS platform.
-
-## Overview
-
-Reachly helps businesses find targeted B2B leads through integrations with Clay & Lusha. The platform provides a clean dashboard to view leads, tracks user quotas, and allows for CSV exports.
-
-## Features
-
-- User authentication and authorization
-- Lead generation with customizable filters
-- Credit-based usage tracking
-- Lead export functionality
-- Admin dashboard
-
-## Tech Stack
-
-- **Runtime**: Node.js
-- **Framework**: Express.js
-- **Database**: PostgreSQL
-- **ORM**: Prisma
-- **Authentication**: JWT
-- **API Integrations**: Clay & Lusha
+A Node.js/Express backend server for the Reachly application with Supabase integration.
 
 ## Getting Started
 
 ### Prerequisites
-
-- Node.js (v16+)
-- PostgreSQL
+- Node.js (v16 or higher)
 - npm or yarn
+- Supabase account
 
 ### Installation
 
-1. Clone the repository
-```bash
-git clone https://github.com/yourusername/reachly-backend.git
-cd reachly-backend
-```
-
-2. Install dependencies
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Set up environment variables
+2. Set up environment variables:
 ```bash
 cp .env.example .env
 ```
-Edit the `.env` file with your configuration.
+Then edit `.env` with your actual Supabase credentials.
 
-4. Set up the database
-```bash
-npx prisma migrate dev
-```
-
-5. Start the development server
+3. Start the development server:
 ```bash
 npm run dev
 ```
 
-## Project Structure
+The server will start on `http://localhost:5000`
 
-```
-reachly-backend/
-├── src/
-│   ├── config/         # Configuration files
-│   ├── controllers/    # Request handlers
-│   ├── middleware/     # Express middleware
-│   ├── models/         # Prisma models
-│   ├── routes/         # API routes
-│   ├── services/       # Business logic
-│   ├── utils/          # Utility functions
-│   └── app.js          # Express app setup
-├── prisma/             # Prisma schema and migrations
-├── docs/               # Documentation
-├── tests/              # Test files
-└── package.json        # Project dependencies
-```
+### Available Scripts
 
-## API Documentation
+- `npm start` - Start the production server
+- `npm run dev` - Start the development server with nodemon
+- `npm test` - Run tests (not implemented yet)
 
-Detailed API documentation can be found in the [docs/architecture.md](docs/architecture.md) file.
+### API Endpoints
 
-## Development
+- `GET /` - Basic server info
+- `GET /api/health` - Health check endpoint
 
-### Running Tests
+### Environment Variables
 
-```bash
-npm test
-```
+See `.env.example` for required environment variables.
 
-### Linting
+## Tech Stack
 
-```bash
-npm run lint
-```
-
-## Deployment
-
-Instructions for deploying to Railway/Render:
-
-1. Set up a new project on Railway/Render
-2. Connect your GitHub repository
-3. Configure environment variables
-4. Deploy
-
-## License
-
-This project is proprietary and confidential.
-
-## Contact
-
-For any inquiries, please contact [your-email@example.com]. 
+- **Express.js** - Web framework
+- **Supabase** - Database and authentication
+- **CORS** - Cross-origin resource sharing
+- **Helmet** - Security middleware
+- **Morgan** - HTTP request logger
+- **dotenv** - Environment variable management
