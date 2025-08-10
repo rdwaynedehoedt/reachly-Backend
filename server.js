@@ -1,67 +1,102 @@
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
+const { Pool } = require('pg');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Azure PostgreSQL connection details from environment variables
+const dbConfig = {
+  host: process.env.AZURE_PG_HOST,
+  port: process.env.AZURE_PG_PORT || 5432,
+  database: process.env.AZURE_PG_DATABASE,
+  user: process.env.AZURE_PG_USER,
+  password: process.env.AZURE_PG_PASSWORD,
+  ssl: { rejectUnauthorized: false } // For Azure PostgreSQL which requires SSL
+};
+
+// Create a new pool
+const pool = new Pool(dbConfig);
+
 // Middleware
-app.use(helmet()); // Security headers
-app.use(cors()); // Enable CORS for all routes
-app.use(morgan('combined')); // Logging
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true // Allow cookies
+}));
+app.use(express.json());
+app.use(cookieParser());
+
+// Test database connection route
+app.get('/api/db-test', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    try {
+      const result = await client.query('SELECT NOW() as current_time');
+      res.json({
+        success: true,
+        message: 'Database connection successful!',
+        data: {
+          current_time: result.rows[0].current_time,
+          database_host: dbConfig.host,
+          database_name: dbConfig.database,
+          database_user: dbConfig.user
+        }
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Database connection error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to connect to the database',
+      error: error.message
+    });
+  }
+});
+
+// Import routes
+const authRoutes = require('./routes/auth');
+const oauthRoutes = require('./routes/oauth');
+
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/oauth', oauthRoutes);
 
 // Basic health check route
 app.get('/', (req, res) => {
   res.json({
     message: 'Reachly Backend Server is running!',
     status: 'healthy',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
-});
-
-// Import routes
-const authRoutes = require('./routes/auth');
-const organizationRoutes = require('./routes/organizations');
-
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/organizations', organizationRoutes);
-
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    uptime: process.uptime(),
     timestamp: new Date().toISOString()
-  });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    message: `Cannot ${req.method} ${req.originalUrl}`
-  });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    error: 'Something went wrong!',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📍 Test database connection: http://localhost:${PORT}/api/db-test`);
+  
+  // Test database connection on startup
+  console.log('🔄 Testing database connection...');
+  pool.connect()
+    .then(client => {
+      console.log('✅ Database connection successful!');
+      client.query('SELECT NOW() as current_time')
+        .then(result => {
+          console.log(`📅 Database time: ${result.rows[0].current_time}`);
+          client.release();
+        })
+        .catch(err => {
+          console.error('❌ Error executing query:', err);
+          client.release();
+        });
+    })
+    .catch(err => {
+      console.error('❌ Database connection error:', err);
+    });
 });
 
 module.exports = app;
