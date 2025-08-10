@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth.middleware');
 const userController = require('../controllers/user.controller');
+const { authenticate } = require('../middleware/auth.middleware');
 
-// Protected routes - require authentication
-router.use(authenticate);
+// Route to update user profile including onboarding completion
+router.put('/profile', authenticate, userController.updateProfile);
 
-// User profile routes
-router.get('/profile', userController.getProfile);
-router.put('/profile', userController.updateProfile);
+// Route to complete onboarding
+router.post('/complete-onboarding', authenticate, userController.completeOnboarding);
 
 module.exports = router;

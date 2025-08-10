@@ -71,11 +71,13 @@ const googleAuth = async (req, res) => {
       email_verified
     } = payload;
 
-    // Check if user exists with this email
-    let userResult = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    // Check if user exists with this email and get profile data
+    let userResult = await pool.query(`
+      SELECT u.*, p.onboarding_completed
+      FROM users u
+      LEFT JOIN user_profiles p ON u.id = p.user_id
+      WHERE u.email = $1
+    `, [email]);
 
     let user;
     let isNewUser = false;
@@ -114,6 +116,9 @@ const googleAuth = async (req, res) => {
         'INSERT INTO user_profiles (user_id) VALUES ($1)',
         [user.id]
       );
+      
+      // Set onboarding_completed to false for new users
+      user.onboarding_completed = false;
     }
 
     // Update last login
@@ -145,6 +150,7 @@ const googleAuth = async (req, res) => {
       lastName: user.last_name,
       avatarUrl: user.avatar_url,
       isVerified: user.email_verified,
+      onboardingCompleted: user.onboarding_completed || false,
       authProvider: user.auth_provider,
       createdAt: user.created_at,
       updatedAt: user.updated_at

@@ -126,6 +126,7 @@ exports.signup = async (req, res) => {
           email: user.email,
           firstName: user.first_name,
           lastName: user.last_name,
+          onboardingCompleted: false, // New users haven't completed onboarding
           createdAt: user.created_at
         },
         accessToken
@@ -159,11 +160,15 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Find user
-    const userResult = await client.query(
-      'SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = $1',
-      [email.toLowerCase()]
-    );
+    // Find user with profile data
+    const userResult = await client.query(`
+      SELECT 
+        u.id, u.email, u.password_hash, u.first_name, u.last_name,
+        p.onboarding_completed
+      FROM users u
+      LEFT JOIN user_profiles p ON u.id = p.user_id
+      WHERE u.email = $1
+    `, [email.toLowerCase()]);
 
     if (userResult.rows.length === 0) {
       return res.status(401).json({
@@ -210,7 +215,8 @@ exports.login = async (req, res) => {
           id: user.id,
           email: user.email,
           firstName: user.first_name,
-          lastName: user.last_name
+          lastName: user.last_name,
+          onboardingCompleted: user.onboarding_completed || false
         },
         accessToken
       }
@@ -301,6 +307,7 @@ exports.getCurrentUser = async (req, res) => {
           firstName: user.first_name,
           lastName: user.last_name,
           emailVerified: user.email_verified,
+          onboardingCompleted: user.onboarding_completed || false,
           lastLogin: user.last_login,
           createdAt: user.created_at,
           profile: {
@@ -311,7 +318,6 @@ exports.getCurrentUser = async (req, res) => {
             phone: user.phone,
             timezone: user.timezone,
             preferences: user.preferences,
-            onboardingCompleted: user.onboarding_completed,
             role: user.role,
             experienceLevel: user.experience_level,
             goals: user.goals
