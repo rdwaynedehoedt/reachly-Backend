@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
+const { authOAuthClient, emailOAuthClient, getOAuthClient } = require('../config/oauth');
 
 // Database configuration from environment variables
 const dbConfig = {
@@ -13,7 +13,6 @@ const dbConfig = {
 };
 
 const pool = new Pool(dbConfig);
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -55,7 +54,8 @@ const googleAuth = async (req, res) => {
       });
     }
 
-    // Verify Google token
+    // Verify Google token using auth OAuth client
+    const googleClient = getOAuthClient('auth');
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID

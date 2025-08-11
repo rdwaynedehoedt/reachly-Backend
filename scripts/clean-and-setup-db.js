@@ -25,6 +25,7 @@ async function cleanAndSetupDatabase() {
     try {
       // Drop existing tables if they exist (in correct order due to foreign keys)
       console.log('🧹 Dropping existing tables...');
+      await client.query('DROP TABLE IF EXISTS email_accounts CASCADE');
       await client.query('DROP TABLE IF EXISTS refresh_tokens CASCADE');
       await client.query('DROP TABLE IF EXISTS organization_members CASCADE');
       await client.query('DROP TABLE IF EXISTS organizations CASCADE');
@@ -34,20 +35,29 @@ async function cleanAndSetupDatabase() {
       console.log('✅ Existing tables dropped');
       
       // Read and execute the auth schema
-      const sqlFilePath = path.join(__dirname, '../database/auth-schema.sql');
-      const sqlScript = fs.readFileSync(sqlFilePath, 'utf8');
+      const authSqlFilePath = path.join(__dirname, '../database/auth-schema.sql');
+      const authSqlScript = fs.readFileSync(authSqlFilePath, 'utf8');
       
-      console.log('🔄 Creating new authentication schema...');
-      await client.query(sqlScript);
+      console.log('🔄 Creating authentication schema...');
+      await client.query(authSqlScript);
+      console.log('✅ Authentication schema created');
       
-      console.log('✅ Authentication database schema setup completed successfully!');
+      // Read and execute the email accounts schema
+      const emailSqlFilePath = path.join(__dirname, '../database/email-accounts-schema.sql');
+      const emailSqlScript = fs.readFileSync(emailSqlFilePath, 'utf8');
+      
+      console.log('🔄 Creating email accounts schema...');
+      await client.query(emailSqlScript);
+      console.log('✅ Email accounts schema created');
+      
+      console.log('✅ Database setup completed successfully!');
       
       // Test the setup by checking if tables exist
       const result = await client.query(`
         SELECT table_name 
         FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name IN ('users', 'user_profiles', 'organizations', 'organization_members', 'refresh_tokens')
+        AND table_name IN ('users', 'user_profiles', 'organizations', 'organization_members', 'refresh_tokens', 'email_accounts')
         ORDER BY table_name
       `);
       

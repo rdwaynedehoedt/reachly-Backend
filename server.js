@@ -61,11 +61,13 @@ app.get('/api/db-test', async (req, res) => {
 const authRoutes = require('./routes/auth');
 const oauthRoutes = require('./routes/oauth');
 const userRoutes = require('./routes/user');
+const emailAuthRoutes = require('./routes/emailAuth');
 
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/email-auth', emailAuthRoutes);
 
 // Basic health check route
 app.get('/', (req, res) => {
