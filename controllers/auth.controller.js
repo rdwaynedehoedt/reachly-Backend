@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
+const { emailOAuthClient } = require('../config/oauth');
 require('dotenv').config();
 
 // Database connection from environment variables
@@ -394,6 +395,176 @@ exports.refreshToken = async (req, res) => {
       success: false,
       message: 'An error occurred while refreshing token'
     });
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Google OAuth callback handler (Authorization Code Flow)
+ */
+exports.googleCallback = async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    const { code, state, error } = req.query;
+
+    // Handle OAuth error
+    if (error) {
+      console.error('OAuth error:', error);
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_error&message=${encodeURIComponent(error)}`);
+    }
+
+    // Check if authorization code is present
+    if (!code) {
+      console.error('Missing authorization code');
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=missing_code`);
+    }
+
+    // Exchange authorization code for tokens
+    const googleClient = emailOAuthClient;
+    const { tokens } = await googleClient.getAccessToken(code);
+    googleClient.setCredentials(tokens);
+
+    // Get user profile information
+    const { google } = require('googleapis');
+    const oauth2 = google.oauth2({ version: 'v2', auth: googleClient });
+    const { data: profile } = await oauth2.userinfo.get();
+
+    const {
+      id: googleId,
+      email,
+      given_name: firstName,
+      family_name: lastName,
+      picture: avatarUrl,
+      verified_email: emailVerified
+    } = profile;
+
+    // Check if user exists
+    let userResult = await client.query(`
+      SELECT u.*, p.onboarding_completed
+      FROM users u
+      LEFT JOIN user_profiles p ON u.id = p.user_id
+      WHERE u.email = $1
+    `, [email]);
+
+    let user;
+    let isNewUser = false;
+
+    if (userResult.rows.length > 0) {
+      user = userResult.rows[0];
+      
+      // Update user with Google info if they signed up with email/password
+      if (user.auth_provider === 'local' && !user.provider_id) {
+        await client.query(
+          `UPDATE users 
+           SET auth_provider = 'google', 
+               provider_id = $1, 
+               avatar_url = $2,
+               email_verified = $3,
+               updated_at = NOW()
+           WHERE id = $4`,
+          [googleId, avatarUrl, emailVerified, user.id]
+        );
+      }
+    } else {
+      // Create new user
+      isNewUser = true;
+      userResult = await client.query(
+        `INSERT INTO users (
+          email, first_name, last_name, avatar_url, 
+          email_verified, auth_provider, provider_id
+        ) VALUES ($1, $2, $3, $4, $5, 'google', $6) 
+        RETURNING *`,
+        [email, firstName, lastName, avatarUrl, emailVerified, googleId]
+      );
+      user = userResult.rows[0];
+
+      // Create user profile
+      await client.query(
+        'INSERT INTO user_profiles (user_id) VALUES ($1)',
+        [user.id]
+      );
+      
+      // Set onboarding_completed to false for new users
+      user.onboarding_completed = false;
+    }
+
+    // Store OAuth tokens for email functionality (if we have refresh token)
+    if (tokens.refresh_token) {
+      // Store or update email account tokens
+      await client.query(`
+        INSERT INTO email_accounts (user_id, email, provider, access_token, refresh_token, expires_at, scope)
+        VALUES ($1, $2, 'gmail', $3, $4, $5, $6)
+        ON CONFLICT (user_id, email, provider) 
+        DO UPDATE SET 
+          access_token = $3,
+          refresh_token = $4,
+          expires_at = $5,
+          scope = $6,
+          updated_at = NOW()
+      `, [
+        user.id,
+        email,
+        tokens.access_token,
+        tokens.refresh_token,
+        tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+        tokens.scope || 'email profile gmail.readonly gmail.send'
+      ]);
+    }
+
+    // Update last login
+    await client.query(
+      'UPDATE users SET last_login = NOW() WHERE id = $1',
+      [user.id]
+    );
+
+    // Generate JWT tokens
+    const accessToken = generateToken(user.id);
+    const refreshToken = await generateRefreshToken(user.id);
+
+    // Set refresh token as HTTP-only cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+
+    // Determine redirect URL based on user state
+    let redirectUrl = process.env.FRONTEND_URL;
+    
+    if (state) {
+      try {
+        // Decode the state parameter to get user info
+        const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+        if (stateData.userId) {
+          // This is for email connection during onboarding
+          redirectUrl += `/onboarding?step=email-connection&status=success`;
+        }
+      } catch (error) {
+        console.log('Could not parse state parameter:', error.message);
+      }
+    }
+
+    if (!state) {
+      // Regular OAuth login
+      if (isNewUser || !user.onboarding_completed) {
+        redirectUrl += `/onboarding?token=${accessToken}`;
+      } else {
+        redirectUrl += `/dashboard?token=${accessToken}`;
+      }
+    }
+
+    // Redirect to frontend with success
+    res.redirect(redirectUrl);
+
+  } catch (error) {
+    console.error('Google OAuth callback error:', error);
+    
+    // Redirect to frontend with error
+    const errorMessage = encodeURIComponent('Authentication failed. Please try again.');
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed&message=${errorMessage}`);
   } finally {
     client.release();
   }

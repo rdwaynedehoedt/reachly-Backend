@@ -58,6 +58,9 @@ router.post('/login', validateLogin, handleValidationErrors, authController.logi
 router.post('/logout', authController.logout);
 router.post('/refresh-token', authController.refreshToken);
 
+// Google OAuth callback route (for authorization code flow)
+router.get('/google/callback', authController.googleCallback);
+
 // Protected routes
 router.get('/me', authenticate, authController.getCurrentUser);
 
