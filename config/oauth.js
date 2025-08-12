@@ -10,14 +10,14 @@ const { OAuth2Client } = require('google-auth-library');
 const authOAuthClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
+  process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/auth/google/callback'
 );
 
 // Email Integration OAuth Client (for Gmail API access)
 const emailOAuthClient = new OAuth2Client(
   process.env.EMAIL_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID,
   process.env.EMAIL_OAUTH_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET,
-  process.env.EMAIL_OAUTH_REDIRECT_URI || 'http://localhost:5000/auth/google/callback'
+  process.env.EMAIL_OAUTH_REDIRECT_URI || 'http://localhost:5000/api/auth/google/callback'
 );
 
 module.exports = {
