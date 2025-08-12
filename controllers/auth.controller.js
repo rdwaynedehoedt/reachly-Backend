@@ -423,7 +423,7 @@ exports.googleCallback = async (req, res) => {
 
     // Exchange authorization code for tokens
     const googleClient = emailOAuthClient;
-    const { tokens } = await googleClient.getAccessToken(code);
+    const { tokens } = await googleClient.getToken(code);
     googleClient.setCredentials(tokens);
 
     // Get user profile information
