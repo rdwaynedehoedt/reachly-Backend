@@ -62,12 +62,18 @@ const authRoutes = require('./routes/auth');
 const oauthRoutes = require('./routes/oauth');
 const userRoutes = require('./routes/user');
 const emailAuthRoutes = require('./routes/emailAuth');
+const leadsRoutes = require('./routes/leads');
+const emailRoutes = require('./routes/email');
+
 
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/email-auth', emailAuthRoutes);
+app.use('/api/leads', leadsRoutes);
+app.use('/api/emails', emailRoutes);
+
 
 // Basic health check route
 app.get('/', (req, res) => {

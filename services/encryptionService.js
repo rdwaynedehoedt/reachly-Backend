@@ -2,13 +2,14 @@ const crypto = require('crypto');
 
 /**
  * Service for encrypting and decrypting OAuth tokens
- * Compatible with all Node.js versions (uses AES-256-CBC)
+ * Uses AES-256-GCM for secure token storage
  */
 class EncryptionService {
     constructor() {
-        this.algorithm = 'aes-256-cbc';
+        this.algorithm = 'aes-256-gcm';
         this.keyLength = 32; // 256 bits
         this.ivLength = 16;  // 128 bits
+        this.tagLength = 16; // 128 bits
         
         if (!process.env.ENCRYPTION_KEY) {
             throw new Error('ENCRYPTION_KEY environment variable is required');
@@ -23,7 +24,7 @@ class EncryptionService {
     /**
      * Encrypt OAuth tokens for secure storage
      * @param {Object} tokens - The tokens object to encrypt
-     * @returns {string} - Base64 encoded encrypted data with IV
+     * @returns {string} - Base64 encoded encrypted data with IV and tag
      */
     encryptTokens(tokens) {
         try {
@@ -33,16 +34,20 @@ class EncryptionService {
             // Generate random IV for each encryption
             const iv = crypto.randomBytes(this.ivLength);
             
-            // Create cipher
-            const cipher = crypto.createCipher('aes-256-cbc', this.key);
+            // Create cipher with IV
+            const cipher = crypto.createCipheriv(this.algorithm, this.key, iv);
             
             // Encrypt the data
             let encrypted = cipher.update(plaintext, 'utf8', 'hex');
             encrypted += cipher.final('hex');
             
-            // Combine IV + encrypted data
+            // Get the authentication tag
+            const tag = cipher.getAuthTag();
+            
+            // Combine IV + tag + encrypted data
             const combined = Buffer.concat([
                 iv,
+                tag,
                 Buffer.from(encrypted, 'hex')
             ]);
             
@@ -51,7 +56,6 @@ class EncryptionService {
             
         } catch (error) {
             console.error('❌ Error encrypting tokens:', error);
-            console.error('Node.js version:', process.version);
             throw new Error('Failed to encrypt tokens');
         }
     }
@@ -66,12 +70,14 @@ class EncryptionService {
             // Decode from base64
             const combined = Buffer.from(encryptedData, 'base64');
             
-            // Extract IV and encrypted data
+            // Extract IV, tag, and encrypted data
             const iv = combined.subarray(0, this.ivLength);
-            const encrypted = combined.subarray(this.ivLength);
+            const tag = combined.subarray(this.ivLength, this.ivLength + this.tagLength);
+            const encrypted = combined.subarray(this.ivLength + this.tagLength);
             
-            // Create decipher
-            const decipher = crypto.createDecipher('aes-256-cbc', this.key);
+            // Create decipher with IV
+            const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv);
+            decipher.setAuthTag(tag);
             
             // Decrypt the data
             let decrypted = decipher.update(encrypted, null, 'utf8');
@@ -82,7 +88,6 @@ class EncryptionService {
             
         } catch (error) {
             console.error('❌ Error decrypting tokens:', error);
-            console.error('Node.js version:', process.version);
             throw new Error('Failed to decrypt tokens');
         }
     }
@@ -101,21 +106,14 @@ class EncryptionService {
                 expires_in: 3600
             };
             
-            console.log('🔧 Testing encryption with Node.js', process.version);
-            
             // Test encryption
             const encrypted = this.encryptTokens(test);
-            console.log('✅ Encryption successful');
             
             // Test decryption  
             const decrypted = this.decryptTokens(encrypted);
-            console.log('✅ Decryption successful');
             
             // Verify they match
-            const isValid = JSON.stringify(test) === JSON.stringify(decrypted);
-            console.log('✅ Validation result:', isValid);
-            
-            return isValid;
+            return JSON.stringify(test) === JSON.stringify(decrypted);
             
         } catch (error) {
             console.error('❌ Encryption validation failed:', error);
