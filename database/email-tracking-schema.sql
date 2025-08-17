@@ -31,9 +31,8 @@ CREATE TABLE IF NOT EXISTS email_sends (
     ip_address INET, -- For tracking opens/clicks
     tracking_pixel_url TEXT, -- Generated tracking pixel URL
     
-    -- Campaign association (for future use)
-    campaign_id UUID, -- Will reference campaigns table when implemented
-    sequence_step INTEGER, -- Which step in the sequence this email represents
+    -- Email metadata
+    sequence_step INTEGER DEFAULT 1, -- Sequential number for email tracking
     
     -- Analytics
     custom_fields JSONB DEFAULT '{}', -- For additional tracking data
@@ -100,7 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_email_sends_email_account_id ON email_sends(email
 CREATE INDEX IF NOT EXISTS idx_email_sends_status ON email_sends(status);
 CREATE INDEX IF NOT EXISTS idx_email_sends_sent_at ON email_sends(sent_at);
 CREATE INDEX IF NOT EXISTS idx_email_sends_message_id ON email_sends(message_id);
-CREATE INDEX IF NOT EXISTS idx_email_sends_campaign_id ON email_sends(campaign_id) WHERE campaign_id IS NOT NULL;
+
 
 CREATE INDEX IF NOT EXISTS idx_tracking_events_email_send_id ON email_tracking_events(email_send_id);
 CREATE INDEX IF NOT EXISTS idx_tracking_events_type ON email_tracking_events(event_type);

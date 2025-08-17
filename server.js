@@ -67,6 +67,7 @@ const emailRoutes = require('./routes/email');
 const campaignsRoutes = require('./routes/campaigns');
 
 
+
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/oauth', oauthRoutes);
@@ -75,6 +76,7 @@ app.use('/api/email-auth', emailAuthRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/campaigns', campaignsRoutes);
+
 
 
 // Basic health check route
