@@ -801,7 +801,7 @@ class CampaignsController {
                 SELECT c.*, ct.subject, ct.body_html, ct.body_text,
                        om.organization_id as user_org
                 FROM campaigns c
-                LEFT JOIN campaign_templates ct ON c.id = ct.campaign_id
+                LEFT JOIN campaign_templates ct ON c.id = ct.campaign_id AND ct.is_active = true
                 JOIN organization_members om ON c.organization_id = om.organization_id
                 WHERE c.id = $1 AND om.user_id = $2 AND om.status = 'active'
             `, [campaignId, userId]);
@@ -814,6 +814,22 @@ class CampaignsController {
             }
             
             const campaign = campaignResult.rows[0];
+            
+            // Debug: Log campaign template data
+            console.log('📧 Campaign template data:', {
+                subject: campaign.subject,
+                hasHtmlBody: !!campaign.body_html,
+                hasTextBody: !!campaign.body_text,
+                htmlBodyLength: campaign.body_html ? campaign.body_html.length : 0
+            });
+            
+            // Check if campaign has a template
+            if (!campaign.subject || (!campaign.body_html && !campaign.body_text)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Campaign template is missing. Please add an email template before launching.'
+                });
+            }
             
             // Check if campaign can be launched
             if (campaign.status !== 'active') {
@@ -888,12 +904,21 @@ class CampaignsController {
                         bodyText = bodyText.replace(new RegExp(placeholder, 'g'), value);
                     });
                     
+                    // Debug: Log what we're about to send
+                    console.log(`📧 Sending to ${lead.email}:`, {
+                        subject: subject,
+                        hasHtml: !!bodyHtml,
+                        hasText: !!bodyText,
+                        htmlLength: bodyHtml ? bodyHtml.length : 0,
+                        textLength: bodyText ? bodyText.length : 0
+                    });
+                    
                     // Send email
                     const emailData = {
                         to: lead.email,
                         subject: subject,
-                        html: bodyHtml,
-                        text: bodyText,
+                        htmlBody: bodyHtml,
+                        textBody: bodyText,
                         from: campaign.from_email
                     };
                     
