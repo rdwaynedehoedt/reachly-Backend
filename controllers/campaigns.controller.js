@@ -839,9 +839,10 @@ class CampaignsController {
                 });
             }
             
-            // Get pending leads for this campaign
+            // Get pending leads for this campaign (including custom fields)
             const leadsResult = await client.query(`
-                SELECT cl.*, l.email, l.first_name, l.last_name, l.company_name, l.job_title
+                SELECT cl.*, l.email, l.first_name, l.last_name, l.company_name, l.job_title,
+                       l.phone, l.website, l.custom_fields, l.original_row_data
                 FROM campaign_leads cl
                 JOIN leads l ON cl.lead_id = l.id
                 WHERE cl.campaign_id = $1 AND cl.status = 'pending'
@@ -883,25 +884,70 @@ class CampaignsController {
                     let bodyHtml = campaign.body_html || '<p>Hello {{first_name}},</p><p>This is a message from our campaign.</p>';
                     let bodyText = campaign.body_text || 'Hello {{first_name}}, This is a message from our campaign.';
                     
-                    // Replace placeholders
+                    // Replace placeholders with comprehensive mappings
                     const replacements = {
+                        // First Name variations
                         '{{first_name}}': lead.first_name || '',
                         '{{firstName}}': lead.first_name || '',
+                        
+                        // Last Name variations
                         '{{last_name}}': lead.last_name || '',
                         '{{lastName}}': lead.last_name || '',
+                        
+                        // Email
                         '{{email}}': lead.email || '',
+                        
+                        // Company variations
                         '{{company}}': lead.company_name || '',
                         '{{company_name}}': lead.company_name || '',
+                        '{{companyName}}': lead.company_name || '',
+                        
+                        // Job Title variations
                         '{{job_title}}': lead.job_title || '',
                         '{{jobTitle}}': lead.job_title || '',
+                        
+                        // Phone
+                        '{{phone}}': lead.phone || '',
+                        
+                        // Website
+                        '{{website}}': lead.website || '',
+                        
+                        // From Name variations
                         '{{from_name}}': campaign.from_name || '',
                         '{{fromName}}': campaign.from_name || ''
                     };
+
+                    // Add custom fields from lead's custom_fields JSONB column
+                    if (lead.custom_fields && typeof lead.custom_fields === 'object') {
+                        Object.entries(lead.custom_fields).forEach(([fieldName, fieldValue]) => {
+                            const placeholder = `{{${fieldName}}}`;
+                            replacements[placeholder] = fieldValue || '';
+                        });
+                    }
+
+                    // BACKWARD COMPATIBILITY: Also check original_row_data for custom fields
+                    // (for leads imported before the custom_fields fix)
+                    if (lead.original_row_data && typeof lead.original_row_data === 'object') {
+                        const standardFields = new Set([
+                            'email', 'first_name', 'last_name', 'phone', 'company_name', 
+                            'job_title', 'website', 'linkedin_url', 'status', 'tags', 'full_name'
+                        ]);
+                        
+                        Object.entries(lead.original_row_data).forEach(([fieldName, fieldValue]) => {
+                            // Only use custom fields that aren't already in custom_fields column
+                            const placeholder = `{{${fieldName}}}`;
+                            if (!standardFields.has(fieldName) && !replacements[placeholder] && fieldValue) {
+                                replacements[placeholder] = fieldValue;
+                            }
+                        });
+                    }
                     
+                    // Apply all replacements
                     Object.entries(replacements).forEach(([placeholder, value]) => {
-                        subject = subject.replace(new RegExp(placeholder, 'g'), value);
-                        bodyHtml = bodyHtml.replace(new RegExp(placeholder, 'g'), value);
-                        bodyText = bodyText.replace(new RegExp(placeholder, 'g'), value);
+                        const regex = new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g');
+                        subject = subject.replace(regex, value);
+                        bodyHtml = bodyHtml.replace(regex, value);
+                        bodyText = bodyText.replace(regex, value);
                     });
                     
                     // Debug: Log what we're about to send

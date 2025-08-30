@@ -250,15 +250,28 @@ class LeadsController {
                         lastName = nameParts.slice(1).join(' ') || '';
                     }
 
-                    // Insert lead
+                    // Extract custom fields (anything that's not a standard field)
+                    const standardFields = new Set([
+                        'email', 'first_name', 'last_name', 'phone', 'company_name', 
+                        'job_title', 'website', 'linkedin_url', 'status', 'tags', 'full_name'
+                    ]);
+                    
+                    const customFields = {};
+                    Object.keys(leadData).forEach(key => {
+                        if (!standardFields.has(key) && leadData[key] !== null && leadData[key] !== undefined && leadData[key] !== '') {
+                            customFields[key] = leadData[key];
+                        }
+                    });
+
+                    // Insert lead with custom fields
                     const leadId = uuidv4();
                     const insertResult = await client.query(`
                         INSERT INTO leads (
                             id, organization_id, email, first_name, last_name,
                             phone, company_name, job_title, website, linkedin_url,
-                            status, source, tags, original_row_data, created_by, updated_by,
+                            status, source, tags, custom_fields, original_row_data, created_by, updated_by,
                             created_at, updated_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                         RETURNING id
                     `, [
                         leadId, organizationId, email, firstName || null, lastName || null,
@@ -270,6 +283,7 @@ class LeadsController {
                         leadData.status?.trim() || 'new',
                         `CSV Import: ${fileName || 'unknown.csv'}`,
                         leadData.tags || [],
+                        JSON.stringify(customFields), // Store custom fields in JSONB column
                         JSON.stringify(leadData), // Store original row data
                         userId, userId,
                         new Date(), new Date()
