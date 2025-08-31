@@ -25,6 +25,20 @@ async function cleanAndSetupDatabase() {
     try {
       // Drop existing tables if they exist (in correct order due to foreign keys)
       console.log('🧹 Dropping existing tables...');
+      
+      // Drop dependent tables first
+      await client.query('DROP TABLE IF EXISTS email_job_logs CASCADE');
+      await client.query('DROP TABLE IF EXISTS email_rate_limits CASCADE');
+      await client.query('DROP TABLE IF EXISTS campaign_schedules CASCADE');
+      await client.query('DROP TABLE IF EXISTS email_jobs CASCADE');
+      await client.query('DROP TABLE IF EXISTS suppression_lists CASCADE');
+      await client.query('DROP TABLE IF EXISTS lead_campaign_history CASCADE');
+      await client.query('DROP TABLE IF EXISTS campaign_contact_lists CASCADE');
+      await client.query('DROP TABLE IF EXISTS contact_list_members CASCADE');
+      await client.query('DROP TABLE IF EXISTS contact_lists CASCADE');
+      await client.query('DROP TABLE IF EXISTS campaign_templates CASCADE');
+      await client.query('DROP TABLE IF EXISTS campaign_leads CASCADE');
+      await client.query('DROP TABLE IF EXISTS campaigns CASCADE');
       await client.query('DROP TABLE IF EXISTS email_tracking_events CASCADE');
       await client.query('DROP TABLE IF EXISTS email_templates CASCADE');
       await client.query('DROP TABLE IF EXISTS email_sends CASCADE');
@@ -73,6 +87,30 @@ async function cleanAndSetupDatabase() {
       await client.query(emailTrackingSqlScript);
       console.log('✅ Email tracking schema created');
       
+      // Read and execute the campaigns schema
+      const campaignsSqlFilePath = path.join(__dirname, '../database/campaigns-schema.sql');
+      const campaignsSqlScript = fs.readFileSync(campaignsSqlFilePath, 'utf8');
+      
+      console.log('🔄 Creating campaigns schema...');
+      await client.query(campaignsSqlScript);
+      console.log('✅ Campaigns schema created');
+      
+      // Read and execute the contact lists schema
+      const contactListsSqlFilePath = path.join(__dirname, '../database/contact-lists-schema.sql');
+      const contactListsSqlScript = fs.readFileSync(contactListsSqlFilePath, 'utf8');
+      
+      console.log('🔄 Creating contact lists schema...');
+      await client.query(contactListsSqlScript);
+      console.log('✅ Contact lists schema created');
+      
+      // Read and execute the email jobs schema
+      const emailJobsSqlFilePath = path.join(__dirname, '../database/email-jobs-schema.sql');
+      const emailJobsSqlScript = fs.readFileSync(emailJobsSqlFilePath, 'utf8');
+      
+      console.log('🔄 Creating email jobs schema...');
+      await client.query(emailJobsSqlScript);
+      console.log('✅ Email jobs schema created');
+      
       console.log('✅ Database setup completed successfully!');
       
       // Test the setup by checking if tables exist
@@ -80,7 +118,14 @@ async function cleanAndSetupDatabase() {
         SELECT table_name 
         FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name IN ('users', 'user_profiles', 'organizations', 'organization_members', 'refresh_tokens', 'email_accounts', 'leads', 'lead_import_batches', 'lead_lists', 'lead_list_memberships', 'email_sends', 'email_tracking_events', 'email_templates')
+        AND table_name IN (
+          'users', 'user_profiles', 'organizations', 'organization_members', 'refresh_tokens',
+          'email_accounts', 'leads', 'lead_import_batches', 'lead_lists', 'lead_list_memberships',
+          'email_sends', 'email_tracking_events', 'email_templates',
+          'campaigns', 'campaign_leads', 'campaign_templates',
+          'contact_lists', 'contact_list_members', 'campaign_contact_lists', 'lead_campaign_history', 'suppression_lists',
+          'email_jobs', 'campaign_schedules', 'email_rate_limits', 'email_job_logs'
+        )
         ORDER BY table_name
       `);
       

@@ -68,6 +68,7 @@ class LeadsController {
     /**
      * Add a single lead
      * POST /api/leads
+     * 
      */
     async addLead(req, res) {
         const client = await pool.connect();

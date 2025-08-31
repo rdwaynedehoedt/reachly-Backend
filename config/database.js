@@ -10,10 +10,13 @@ const dbConfig = {
     password: process.env.AZURE_PG_PASSWORD,
     ssl: process.env.AZURE_PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
     
-    // Connection pool settings
-    max: 20,                // Maximum number of clients in the pool
-    idleTimeoutMillis: 30000, // How long a client is allowed to remain idle
-    connectionTimeoutMillis: 2000, // How long to wait for connection
+    // Connection pool settings optimized for Azure PostgreSQL
+    max: 10,                // Maximum number of clients in the pool
+    min: 2,                 // Minimum pool size
+    idleTimeoutMillis: 60000, // How long a client is allowed to remain idle (60s)
+    connectionTimeoutMillis: 10000, // How long to wait for connection (10s for Azure)
+    acquireTimeoutMillis: 60000, // How long to wait for a connection from pool
+    createTimeoutMillis: 10000, // Max wait for connection creation
 };
 
 // Create connection pool

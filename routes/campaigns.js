@@ -4,7 +4,11 @@ const campaignsController = require('../controllers/campaigns.controller');
 const campaignTemplatesController = require('../controllers/campaignTemplates.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
-// Apply authentication middleware to all campaign routes
+// Public email tracking routes (no auth required)
+router.get('/track/open/:trackingId', campaignsController.trackEmailOpen);
+router.get('/track/click/:trackingId/:linkId', campaignsController.trackEmailClick);
+
+// Apply authentication middleware to all other campaign routes
 router.use(authenticate);
 
 // Campaign CRUD operations
@@ -25,8 +29,13 @@ router.post('/:id/leads', campaignsController.addLeadsToCampaign);
 router.delete('/:id/leads', campaignsController.removeLeadsFromCampaign);
 router.post('/:id/leads/remove', campaignsController.removeLeadsFromCampaign);
 
+// Dashboard analytics (organization-wide)
+router.get('/dashboard/analytics', campaignsController.getDashboardAnalytics);
+
 // Campaign analytics
 router.get('/:id/analytics', campaignsController.getCampaignAnalytics);
+
+
 
 // Campaign template management
 router.get('/:campaignId/template', campaignTemplatesController.getCampaignTemplate);

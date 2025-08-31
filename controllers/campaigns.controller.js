@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const emailJobService = require('../services/emailJobService');
 
 /**
  * Campaigns Controller - Handles campaign management operations
@@ -786,8 +787,9 @@ class CampaignsController {
     }
 
     /**
-     * Launch campaign - send emails to all pending leads
+     * Launch campaign - create email jobs for all pending leads
      * POST /api/campaigns/:id/launch
+     * Body: { sendType: 'immediate' | 'scheduled', scheduledFor?: date, rateLimit?: number }
      */
     async launchCampaign(req, res) {
         const client = await pool.connect();
@@ -795,6 +797,11 @@ class CampaignsController {
         try {
             const userId = req.user.userId;
             const { id: campaignId } = req.params;
+            const { 
+                sendType = 'immediate', 
+                scheduledFor, 
+                rateLimit = 100 
+            } = req.body;
 
             // Validate campaign access and get campaign details
             const campaignResult = await client.query(`
@@ -870,13 +877,11 @@ class CampaignsController {
             }
             
             const emailAccount = emailAccountResult.rows[0];
-            const gmailService = require('../services/gmailService');
             
-            let sentCount = 0;
-            let failedCount = 0;
-            const errors = [];
+            // Prepare recipients for EmailJobService
+            const recipients = [];
             
-            // Send emails to each pending lead
+            // Process each pending lead and prepare personalized emails
             for (const lead of leadsResult.rows) {
                 try {
                     // Personalize the email content
@@ -950,70 +955,77 @@ class CampaignsController {
                         bodyText = bodyText.replace(regex, value);
                     });
                     
-                    // Debug: Log what we're about to send
-                    console.log(`📧 Sending to ${lead.email}:`, {
-                        subject: subject,
-                        hasHtml: !!bodyHtml,
-                        hasText: !!bodyText,
-                        htmlLength: bodyHtml ? bodyHtml.length : 0,
-                        textLength: bodyText ? bodyText.length : 0
+                    // Add to recipients list with personalized content
+                    recipients.push({
+                        leadId: lead.id,
+                        email: lead.email,
+                        personalizedSubject: subject,
+                        personalizedBodyHtml: bodyHtml,
+                        personalizedBodyText: bodyText,
+                        firstName: lead.first_name,
+                        lastName: lead.last_name,
+                        company: lead.company_name
                     });
                     
-                    // Send email
-                    const emailData = {
-                        to: lead.email,
-                        subject: subject,
-                        htmlBody: bodyHtml,
-                        textBody: bodyText,
-                        from: campaign.from_email
-                    };
-                    
-                    await gmailService.sendEmail(emailAccount.id, emailData);
-                    
-                    // Update lead status to sent
-                    await client.query(`
-                        UPDATE campaign_leads 
-                        SET status = 'sent', sent_at = NOW() 
-                        WHERE id = $1
-                    `, [lead.id]);
-                    
-                    sentCount++;
-                    
-                    // Small delay between emails to avoid rate limiting
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    
                 } catch (error) {
-                    console.error(`Failed to send email to ${lead.email}:`, error);
-                    
-                    // Update lead status to failed
-                    await client.query(`
-                        UPDATE campaign_leads 
-                        SET status = 'failed', error_message = $1 
-                        WHERE id = $2
-                    `, [error.message, lead.id]);
-                    
-                    failedCount++;
-                    errors.push(`${lead.email}: ${error.message}`);
+                    console.error(`Failed to personalize email for ${lead.email}:`, error);
+                    // Skip this lead but continue with others
+                    continue;
                 }
             }
             
-            // Update campaign statistics
+            if (recipients.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No valid recipients found after processing leads'
+                });
+            }
+            
+            // Create email jobs using EmailJobService
+            const jobParams = {
+                campaignId,
+                organizationId: campaign.user_org,
+                recipients,
+                rateLimit,
+                createdBy: userId,
+                // Use the campaign template as base (will be overridden by personalized content)
+                subject: campaign.subject,
+                bodyHtml: campaign.body_html,
+                bodyText: campaign.body_text
+            };
+            
+            let jobResult;
+            if (sendType === 'scheduled' && scheduledFor) {
+                // Create scheduled jobs
+                jobResult = await emailJobService.createScheduledJobs({
+                    ...jobParams,
+                    scheduledFor: new Date(scheduledFor)
+                });
+            } else {
+                // Create immediate jobs (default)
+                jobResult = await emailJobService.createImmediateJobs(jobParams);
+            }
+            
+            // Update campaign status to active (since we're launching it)
             await client.query(`
                 UPDATE campaigns 
-                SET emails_sent = emails_sent + $1,
+                SET status = 'active',
                     updated_at = NOW()
-                WHERE id = $2
-            `, [sentCount, campaignId]);
+                WHERE id = $1
+            `, [campaignId]);
             
             return res.status(200).json({
                 success: true,
-                message: `Campaign launched successfully. ${sentCount} emails sent, ${failedCount} failed.`,
+                message: `Campaign launched successfully! ${jobResult.jobsCreated} email jobs created.`,
                 data: {
                     campaignId,
-                    sentCount,
-                    failedCount,
-                    totalProcessed: sentCount + failedCount,
-                    errors: errors.slice(0, 10) // Limit errors to first 10
+                    sendType,
+                    scheduledFor: sendType === 'scheduled' ? scheduledFor : null,
+                    jobsCreated: jobResult.jobsCreated,
+                    totalRecipients: recipients.length,
+                    rateLimit,
+                    estimatedCompletionTime: jobResult.estimatedCompletion,
+                    scheduleInfo: jobResult.scheduleInfo
                 }
             });
             
@@ -1127,6 +1139,148 @@ class CampaignsController {
             return res.status(500).json({
                 success: false,
                 message: 'Failed to remove leads from campaign'
+            });
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Get dashboard analytics (organization-wide)
+     * GET /api/campaigns/dashboard/analytics
+     */
+    async getDashboardAnalytics(req, res) {
+        const client = await pool.connect();
+        
+        try {
+            const userId = req.user.userId;
+
+            // Get user's organization
+            const orgResult = await client.query(`
+                SELECT organization_id 
+                FROM organization_members 
+                WHERE user_id = $1 AND status = 'active'
+            `, [userId]);
+
+            if (orgResult.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Organization not found'
+                });
+            }
+
+            const organizationId = orgResult.rows[0].organization_id;
+
+            // Get campaign statistics
+            const campaignStatsResult = await client.query(`
+                SELECT 
+                    COUNT(*) as total_campaigns,
+                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_campaigns,
+                    COUNT(CASE WHEN status = 'paused' THEN 1 END) as paused_campaigns,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_campaigns,
+                    COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft_campaigns
+                FROM campaigns 
+                WHERE organization_id = $1
+            `, [organizationId]);
+
+            // Get lead statistics across all campaigns
+            const leadStatsResult = await client.query(`
+                SELECT 
+                    COUNT(DISTINCT cl.lead_id) as total_leads,
+                    COUNT(CASE WHEN cl.status = 'sent' THEN 1 END) as emails_sent,
+                    COUNT(CASE WHEN cl.status = 'delivered' THEN 1 END) as emails_delivered,
+                    COUNT(CASE WHEN cl.status = 'opened' THEN 1 END) as emails_opened,
+                    COUNT(CASE WHEN cl.status = 'clicked' THEN 1 END) as emails_clicked,
+                    COUNT(CASE WHEN cl.status = 'replied' THEN 1 END) as emails_replied,
+                    COUNT(CASE WHEN cl.status = 'bounced' THEN 1 END) as emails_bounced
+                FROM campaign_leads cl
+                JOIN campaigns c ON cl.campaign_id = c.id
+                WHERE c.organization_id = $1
+            `, [organizationId]);
+
+            // Get recent activity (last 30 days)
+            const recentActivityResult = await client.query(`
+                SELECT 
+                    DATE(cl.sent_at) as date,
+                    COUNT(*) as emails_sent,
+                    COUNT(CASE WHEN cl.opened_at IS NOT NULL THEN 1 END) as emails_opened,
+                    COUNT(CASE WHEN cl.clicked_at IS NOT NULL THEN 1 END) as emails_clicked,
+                    COUNT(CASE WHEN cl.replied_at IS NOT NULL THEN 1 END) as emails_replied
+                FROM campaign_leads cl
+                JOIN campaigns c ON cl.campaign_id = c.id
+                WHERE c.organization_id = $1 
+                    AND cl.sent_at >= NOW() - INTERVAL '30 days'
+                    AND cl.sent_at IS NOT NULL
+                GROUP BY DATE(cl.sent_at)
+                ORDER BY DATE(cl.sent_at) DESC
+                LIMIT 30
+            `, [organizationId]);
+
+            // Get top performing campaigns
+            const topCampaignsResult = await client.query(`
+                SELECT 
+                    c.id,
+                    c.name,
+                    c.status,
+                    COUNT(cl.lead_id) as total_leads,
+                    COUNT(CASE WHEN cl.status = 'sent' THEN 1 END) as emails_sent,
+                    COUNT(CASE WHEN cl.status = 'opened' THEN 1 END) as emails_opened,
+                    COUNT(CASE WHEN cl.status = 'replied' THEN 1 END) as emails_replied,
+                    CASE 
+                        WHEN COUNT(CASE WHEN cl.status = 'sent' THEN 1 END) > 0 
+                        THEN ROUND(COUNT(CASE WHEN cl.status = 'opened' THEN 1 END) * 100.0 / COUNT(CASE WHEN cl.status = 'sent' THEN 1 END), 2)
+                        ELSE 0 
+                    END as open_rate
+                FROM campaigns c
+                LEFT JOIN campaign_leads cl ON c.id = cl.campaign_id
+                WHERE c.organization_id = $1
+                GROUP BY c.id, c.name, c.status
+                ORDER BY emails_sent DESC
+                LIMIT 5
+            `, [organizationId]);
+
+            const campaignStats = campaignStatsResult.rows[0];
+            const leadStats = leadStatsResult.rows[0];
+
+            // Calculate rates
+            const emailsSent = parseInt(leadStats.emails_sent) || 0;
+            const openRate = emailsSent > 0 ? (parseInt(leadStats.emails_opened) / emailsSent * 100) : 0;
+            const clickRate = emailsSent > 0 ? (parseInt(leadStats.emails_clicked) / emailsSent * 100) : 0;
+            const replyRate = emailsSent > 0 ? (parseInt(leadStats.emails_replied) / emailsSent * 100) : 0;
+
+            // Calculate opportunities (simplified - replied emails * average deal size)
+            const avgDealSize = 2500; // This could be configurable per organization
+            const opportunities = parseInt(leadStats.emails_replied) * avgDealSize;
+
+            return res.json({
+                success: true,
+                data: {
+                    overview: {
+                        total_campaigns: parseInt(campaignStats.total_campaigns),
+                        active_campaigns: parseInt(campaignStats.active_campaigns),
+                        total_leads: parseInt(leadStats.total_leads),
+                        emails_sent: parseInt(leadStats.emails_sent),
+                        open_rate: Math.round(openRate * 100) / 100,
+                        click_rate: Math.round(clickRate * 100) / 100,
+                        reply_rate: Math.round(replyRate * 100) / 100,
+                        opportunities: opportunities
+                    },
+                    campaign_breakdown: {
+                        active: parseInt(campaignStats.active_campaigns),
+                        paused: parseInt(campaignStats.paused_campaigns),
+                        completed: parseInt(campaignStats.completed_campaigns),
+                        draft: parseInt(campaignStats.draft_campaigns)
+                    },
+                    recent_activity: recentActivityResult.rows,
+                    top_campaigns: topCampaignsResult.rows
+                }
+            });
+
+        } catch (error) {
+            console.error('Get dashboard analytics error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to fetch dashboard analytics'
             });
         } finally {
             client.release();
@@ -1301,6 +1455,146 @@ class CampaignsController {
                 success: false,
                 message: 'Failed to delete campaign'
             });
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Track email opens (pixel tracking)
+     * GET /api/campaigns/track/open/:trackingId
+     */
+    async trackEmailOpen(req, res) {
+        const client = await pool.connect();
+        
+        try {
+            const { trackingId } = req.params;
+            
+            if (!trackingId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Tracking ID is required'
+                });
+            }
+
+            // Find the campaign lead by tracking ID
+            const leadResult = await client.query(`
+                SELECT cl.id, cl.campaign_id, cl.lead_id, cl.status
+                FROM campaign_leads cl
+                WHERE cl.id = $1
+            `, [trackingId]);
+
+            if (leadResult.rows.length === 0) {
+                // Return 1x1 transparent pixel even if tracking fails
+                const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+                res.set('Content-Type', 'image/gif');
+                res.set('Content-Length', pixel.length);
+                res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+                return res.send(pixel);
+            }
+
+            const campaignLead = leadResult.rows[0];
+
+            // Update the lead status to 'opened' if not already opened
+            if (campaignLead.status === 'sent' || campaignLead.status === 'delivered') {
+                await client.query(`
+                    UPDATE campaign_leads 
+                    SET 
+                        status = 'opened',
+                        opened_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = $1
+                `, [trackingId]);
+
+                // Update campaign counters
+                await client.query(`
+                    UPDATE campaigns 
+                    SET emails_opened = emails_opened + 1
+                    WHERE id = $1
+                `, [campaignLead.campaign_id]);
+
+                console.log(`📧 Email opened: Campaign ${campaignLead.campaign_id}, Lead ${campaignLead.lead_id}`);
+            }
+
+            // Return 1x1 transparent pixel
+            const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+            res.set('Content-Type', 'image/gif');
+            res.set('Content-Length', pixel.length);
+            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.send(pixel);
+
+        } catch (error) {
+            console.error('Track email open error:', error);
+            
+            // Still return pixel even on error
+            const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+            res.set('Content-Type', 'image/gif');
+            res.set('Content-Length', pixel.length);
+            res.send(pixel);
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Track email clicks (redirect tracking)
+     * GET /api/campaigns/track/click/:trackingId/:linkId
+     */
+    async trackEmailClick(req, res) {
+        const client = await pool.connect();
+        
+        try {
+            const { trackingId, linkId } = req.params;
+            const { url } = req.query;
+            
+            if (!trackingId || !url) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Tracking ID and URL are required'
+                });
+            }
+
+            // Find the campaign lead by tracking ID
+            const leadResult = await client.query(`
+                SELECT cl.id, cl.campaign_id, cl.lead_id, cl.status
+                FROM campaign_leads cl
+                WHERE cl.id = $1
+            `, [trackingId]);
+
+            if (leadResult.rows.length > 0) {
+                const campaignLead = leadResult.rows[0];
+
+                // Update the lead status to 'clicked' if not already
+                if (['sent', 'delivered', 'opened'].includes(campaignLead.status)) {
+                    await client.query(`
+                        UPDATE campaign_leads 
+                        SET 
+                            status = 'clicked',
+                            clicked_at = NOW(),
+                            updated_at = NOW()
+                        WHERE id = $1
+                    `, [trackingId]);
+
+                    // Update campaign counters
+                    await client.query(`
+                        UPDATE campaigns 
+                        SET emails_clicked = emails_clicked + 1
+                        WHERE id = $1
+                    `, [campaignLead.campaign_id]);
+
+                    console.log(`🔗 Email clicked: Campaign ${campaignLead.campaign_id}, Lead ${campaignLead.lead_id}, URL: ${url}`);
+                }
+            }
+
+            // Redirect to the actual URL
+            res.redirect(decodeURIComponent(url));
+
+        } catch (error) {
+            console.error('Track email click error:', error);
+            
+            // Redirect to URL even on error
+            const redirectUrl = req.query.url ? decodeURIComponent(req.query.url) : 'https://google.com';
+            res.redirect(redirectUrl);
         } finally {
             client.release();
         }
