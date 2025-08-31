@@ -92,7 +92,9 @@ class CampaignsController {
                 scheduled_at: scheduledAt,
                 send_immediately: sendImmediately = false,
                 timezone = 'UTC',
-                daily_send_limit: dailySendLimit = 50
+                daily_send_limit: dailySendLimit = 50,
+                is_mass_email: isMassEmail = false,
+                mass_email_concurrency: massEmailConcurrency = 50
             } = req.body;
 
             // Input validation
@@ -167,13 +169,15 @@ class CampaignsController {
                     id, organization_id, name, description, type, status,
                     from_name, from_email, reply_to_email,
                     scheduled_at, send_immediately, timezone, daily_send_limit,
+                    is_mass_email, mass_email_concurrency,
                     created_by, updated_by
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                 RETURNING *
             `, [
                 campaignId, organizationId, name.trim(), description?.trim(), type, 'draft',
                 fromName?.trim(), fromEmail.trim(), replyToEmail?.trim(),
                 scheduledAt, sendImmediately, timezone, dailySendLimit,
+                isMassEmail, massEmailConcurrency,
                 userId, userId
             ]);
 
@@ -822,12 +826,23 @@ class CampaignsController {
             
             const campaign = campaignResult.rows[0];
             
+            // Handle mass email rate limiting
+            let finalRateLimit = rateLimit;
+            if (campaign.is_mass_email) {
+                finalRateLimit = campaign.mass_email_concurrency || 100;
+                console.log(`🚀 Mass email mode activated! Concurrency: ${finalRateLimit} emails`);
+            } else {
+                console.log(`📈 Distributed sending mode. Rate limit: ${finalRateLimit} emails/hour`);
+            }
+            
             // Debug: Log campaign template data
             console.log('📧 Campaign template data:', {
                 subject: campaign.subject,
                 hasHtmlBody: !!campaign.body_html,
                 hasTextBody: !!campaign.body_text,
-                htmlBodyLength: campaign.body_html ? campaign.body_html.length : 0
+                htmlBodyLength: campaign.body_html ? campaign.body_html.length : 0,
+                isMassEmail: campaign.is_mass_email,
+                massEmailConcurrency: campaign.mass_email_concurrency
             });
             
             // Check if campaign has a template
@@ -986,12 +1001,15 @@ class CampaignsController {
                 campaignId,
                 organizationId: campaign.user_org,
                 recipients,
-                rateLimit,
+                rateLimit: finalRateLimit,
                 createdBy: userId,
                 // Use the campaign template as base (will be overridden by personalized content)
                 subject: campaign.subject,
                 bodyHtml: campaign.body_html,
-                bodyText: campaign.body_text
+                bodyText: campaign.body_text,
+                // Mass email configuration
+                isMassEmail: campaign.is_mass_email,
+                massEmailConcurrency: campaign.mass_email_concurrency
             };
             
             let jobResult;
@@ -1016,14 +1034,16 @@ class CampaignsController {
             
             return res.status(200).json({
                 success: true,
-                message: `Campaign launched successfully! ${jobResult.jobsCreated} email jobs created.`,
+                message: `Campaign launched successfully! ${jobResult.jobsCreated} email jobs created.${campaign.is_mass_email ? ' 🚀 Mass email mode enabled!' : ' 📈 Distributed sending mode.'}`,
                 data: {
                     campaignId,
                     sendType,
                     scheduledFor: sendType === 'scheduled' ? scheduledFor : null,
                     jobsCreated: jobResult.jobsCreated,
                     totalRecipients: recipients.length,
-                    rateLimit,
+                    rateLimit: finalRateLimit,
+                    isMassEmail: campaign.is_mass_email,
+                    massEmailConcurrency: campaign.mass_email_concurrency,
                     estimatedCompletionTime: jobResult.estimatedCompletion,
                     scheduleInfo: jobResult.scheduleInfo
                 }

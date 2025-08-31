@@ -89,14 +89,16 @@ class EmailJobService {
                 bodyText,
                 bodyHtml,
                 rateLimit = 100,
-                createdBy
+                createdBy,
+                isMassEmail = false,
+                massEmailConcurrency = 50
             } = params;
 
             // Validate required parameters
             this._validateJobParams(params);
 
-            // Calculate staggered send times for rate limiting
-            const jobsWithTiming = this._calculateImmediateSendTimes(recipients, rateLimit);
+            // Calculate staggered send times for rate limiting (or immediate for mass emails)
+            const jobsWithTiming = this._calculateImmediateSendTimes(recipients, rateLimit, isMassEmail);
 
             // Create jobs in batches for performance
             const jobIds = [];
@@ -318,6 +320,8 @@ class EmailJobService {
                     c.name as campaign_name,
                     c.from_email,
                     c.from_name,
+                    c.is_mass_email,
+                    c.mass_email_concurrency,
                     o.name as organization_name
                 FROM email_jobs ej
                 JOIN campaigns c ON ej.campaign_id = c.id
@@ -674,15 +678,26 @@ class EmailJobService {
      * Calculate immediate send times with rate limiting
      * @private
      */
-    _calculateImmediateSendTimes(recipients, rateLimit) {
+    _calculateImmediateSendTimes(recipients, rateLimit, isMassEmail = false) {
         const now = new Date();
-        const intervalMs = (60 * 60 * 1000) / rateLimit; // milliseconds between emails
         
-        return recipients.map((recipient, index) => ({
-            ...recipient,
-            scheduledFor: new Date(now.getTime() + (index * intervalMs)),
-            priority: 5 // Default priority for immediate sending
-        }));
+        if (isMassEmail) {
+            // For mass emails, all emails should be sent immediately (same time)
+            return recipients.map((recipient) => ({
+                ...recipient,
+                scheduledFor: now, // All emails get the same immediate time
+                priority: 1 // Higher priority for mass emails
+            }));
+        } else {
+            // For distributed emails, calculate staggered send times
+            const intervalMs = (60 * 60 * 1000) / rateLimit; // milliseconds between emails
+            
+            return recipients.map((recipient, index) => ({
+                ...recipient,
+                scheduledFor: new Date(now.getTime() + (index * intervalMs)),
+                priority: 5 // Default priority for distributed sending
+            }));
+        }
     }
 
     /**

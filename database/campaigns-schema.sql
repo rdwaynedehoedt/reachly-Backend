@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS campaigns (
     -- Limits and configuration
     daily_send_limit INTEGER DEFAULT 50,
     
+    -- Mass email settings
+    is_mass_email BOOLEAN DEFAULT false,
+    mass_email_concurrency INTEGER DEFAULT 50,
+    
     -- Analytics counters
     total_leads INTEGER DEFAULT 0,
     emails_sent INTEGER DEFAULT 0,

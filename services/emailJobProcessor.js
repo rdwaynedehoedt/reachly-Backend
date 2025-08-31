@@ -132,6 +132,47 @@ class EmailJobProcessor {
         console.log(`🏢 Processing ${jobs.length} jobs for organization ${organizationId}`);
         
         try {
+            // Separate mass email jobs from regular jobs
+            const massEmailJobs = jobs.filter(job => job.is_mass_email);
+            const regularJobs = jobs.filter(job => !job.is_mass_email);
+
+            if (massEmailJobs.length > 0) {
+                console.log(`🚀 Found ${massEmailJobs.length} mass email jobs - processing with high concurrency`);
+                await this.processMassEmailJobs(organizationId, massEmailJobs);
+            }
+
+            if (regularJobs.length > 0) {
+                console.log(`📈 Found ${regularJobs.length} regular jobs - processing with standard rate limiting`);
+                await this.processRegularJobs(organizationId, regularJobs);
+            }
+            
+        } catch (error) {
+            console.error(`❌ Error processing jobs for organization ${organizationId}:`, error);
+        }
+    }
+
+    /**
+     * Process mass email jobs with high concurrency (no rate limiting)
+     */
+    async processMassEmailJobs(organizationId, jobs) {
+        try {
+            // Process all mass email jobs in parallel with no rate limiting
+            const processPromises = jobs.map(job => this.processIndividualJob(job));
+            
+            console.log(`🚀 Processing ${jobs.length} mass email jobs in parallel...`);
+            await Promise.allSettled(processPromises);
+            
+            console.log(`✅ Mass email batch completed for org ${organizationId}`);
+        } catch (error) {
+            console.error(`❌ Error processing mass email jobs for org ${organizationId}:`, error);
+        }
+    }
+
+    /**
+     * Process regular jobs with standard rate limiting
+     */
+    async processRegularJobs(organizationId, jobs) {
+        try {
             // Check rate limits for this organization
             const rateLimitInfo = await this.checkOrganizationRateLimit(organizationId);
             if (!rateLimitInfo.canSend) {
