@@ -2,17 +2,22 @@ const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Database connection
+// Database connection using environment variables
 const pool = new Pool({
-  host: 'reachly-datebase-server.postgres.database.azure.com',
-  port: 5432,
-  database: 'postgres',
-  user: 'Dwayne',
-  password: '@Anton2004',
+  host: process.env.AZURE_PG_HOST,
+  port: parseInt(process.env.AZURE_PG_PORT) || 5432,
+  database: process.env.AZURE_PG_DATABASE,
+  user: process.env.AZURE_PG_USER,
+  password: process.env.AZURE_PG_PASSWORD,
   ssl: { rejectUnauthorized: false }
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  console.error('❌ JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 
 /**
  * Authentication middleware

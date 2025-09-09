@@ -10,7 +10,7 @@ function validateEnterpriseSetup() {
     console.log('='.repeat(50));
     
     // Expected configuration
-    const expectedAuthClient = '293412483835-vm7qdt0as16d66lohc8h9lugufcb0utp.apps.googleusercontent.com';
+    const expectedAuthClient = process.env.GOOGLE_CLIENT_ID || 'your_google_client_id_here';
     const expectedEmailClient = '600137103994-argda65jfinceckphalr2c1vfkbm83e1.apps.googleusercontent.com';
     
     console.log('\n🔍 Configuration Analysis:');

@@ -15,9 +15,14 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// JWT secret - in production, use a secure random string
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
+// JWT secret - must be provided via environment variable
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+if (!JWT_SECRET) {
+  console.error('❌ JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 
 /**
  * Generate JWT token
