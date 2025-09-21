@@ -110,20 +110,7 @@ const findEmailFromLinkedIn = async (req, res) => {
       userId,
     });
 
-    // First test API key validity (for debugging 401 errors)
-    const apiKeyTest = await findymailService.testApiKey();
-    if (!apiKeyTest.success) {
-      console.error('❌ FindyMail API key test failed:', apiKeyTest);
-      return res.status(401).json({
-        success: false,
-        error: `FindyMail API authentication failed: ${apiKeyTest.error}`,
-        debug: apiKeyTest
-      });
-    }
-    
-    console.log(`✅ FindyMail API key valid (method: ${apiKeyTest.method})`);
-
-    // Call FindyMail service
+    // Call FindyMail service (API key validation temporarily disabled for testing)
     const result = await findymailService.findEmailFromLinkedIn(
       linkedin_url,
       organizationId,
