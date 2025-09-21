@@ -8,9 +8,9 @@
     "dev": "nodemon server.js",
     "setup-db": "node scripts/clean-and-setup-db.js",
     "setup-env": "node scripts/setup-env.js",
-    "email-processor": "node start-email-processor.js",
-    "email-processor:status": "node start-email-processor.js --status",
-    "email-processor:process-now": "node start-email-processor.js --process-now",
+    "email-processor": "node workers/start-email-processor.js",
+    "email-processor:status": "node workers/start-email-processor.js --status",
+    "email-processor:process-now": "node workers/start-email-processor.js --process-now",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -22,6 +22,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

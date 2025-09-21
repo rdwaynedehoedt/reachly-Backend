@@ -66,6 +66,7 @@ const leadsRoutes = require('./routes/leads');
 const emailRoutes = require('./routes/email');
 const campaignsRoutes = require('./routes/campaigns');
 const contactListsRoutes = require('./routes/contactLists');
+const findymailRoutes = require('./routes/findymail');
 
 
 
@@ -77,6 +78,7 @@ app.use('/api/email-auth', emailAuthRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/campaigns', campaignsRoutes);
+app.use('/api/findymail', findymailRoutes);
 app.use('/api/contact-lists', contactListsRoutes);
 
 

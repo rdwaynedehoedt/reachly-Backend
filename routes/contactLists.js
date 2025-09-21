@@ -9,6 +9,7 @@ router.use(authenticate);
 // Contact Lists Management
 router.get('/', contactListsController.getContactLists);
 router.post('/', contactListsController.createContactList);
+router.post('/create-from-search', contactListsController.createFromSearch);
 
 // Contact List Members
 router.post('/:id/contacts', contactListsController.addContactsToList);

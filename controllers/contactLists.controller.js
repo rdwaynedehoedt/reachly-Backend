@@ -675,6 +675,228 @@ class ContactListsController {
             client.release();
         }
     }
+
+    /**
+     * Create a contact list from ContactOut search results
+     * POST /api/contact-lists/create-from-search
+     */
+    async createFromSearch(req, res) {
+        const client = await pool.connect();
+        
+        try {
+            const userId = req.user.userId;
+            const { listName, description, profiles } = req.body;
+            
+            if (!listName?.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'List name is required'
+                });
+            }
+
+            if (!Array.isArray(profiles) || profiles.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Profiles array is required'
+                });
+            }
+            
+            // Get user's organization (with fuzzy matching like FindyMail)
+            let orgResult = { rows: [] };
+            try {
+                orgResult = await client.query(`
+                    SELECT om.organization_id, o.name, om.user_id as found_user_id
+                    FROM organization_members om 
+                    JOIN organizations o ON om.organization_id = o.id
+                    WHERE om.user_id = $1 AND om.status = 'active'
+                    LIMIT 1
+                `, [userId]);
+            } catch (error) {
+                console.log(`⚠️ UUID format error for ${userId}: ${error.message}`);
+            }
+
+            if (orgResult.rows.length === 0) {
+                console.log(`🔄 Attempting fuzzy match for user ID: ${userId}`);
+                try {
+                    const similarResult = await client.query(`
+                        SELECT om.organization_id, o.name, om.user_id as found_user_id
+                        FROM organization_members om 
+                        JOIN organizations o ON om.organization_id = o.id
+                        WHERE om.user_id::text LIKE $1 AND om.status = 'active'
+                        LIMIT 1
+                    `, [userId.substring(0, 30) + '%']);
+                    
+                    if (similarResult.rows.length > 0) {
+                        console.log(`✅ Found similar user for contact list: ${similarResult.rows[0].found_user_id}`);
+                        orgResult = similarResult;
+                    }
+                } catch (fuzzyError) {
+                    console.log(`❌ Fuzzy match also failed: ${fuzzyError.message}`);
+                }
+
+                if (orgResult.rows.length === 0) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'No active organization membership found'
+                    });
+                }
+            }
+            
+            const organizationId = orgResult.rows[0].organization_id;
+            const actualUserId = orgResult.rows[0].found_user_id;
+
+            await client.query('BEGIN');
+
+            // Check if list name already exists
+            const existingList = await client.query(`
+                SELECT id FROM contact_lists 
+                WHERE organization_id = $1 AND name = $2 AND is_active = true
+            `, [organizationId, listName.trim()]);
+            
+            if (existingList.rows.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    message: 'A contact list with this name already exists'
+                });
+            }
+
+            // Create the contact list
+            const listId = uuidv4();
+            await client.query(`
+                INSERT INTO contact_lists (
+                    id, organization_id, name, description, type, 
+                    allow_duplicate_emails, created_by, updated_by
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `, [
+                listId, organizationId, listName.trim(), 
+                description?.trim() || `ContactOut search results - ${new Date().toLocaleDateString()}`, 
+                'import', false, actualUserId, actualUserId
+            ]);
+
+            let importedCount = 0;
+            let skippedCount = 0;
+            const errors = [];
+
+            // Process each profile from ContactOut
+            for (const profile of profiles) {
+                try {
+                    const email = profile.email?.trim().toLowerCase();
+                    
+                    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        errors.push(`Invalid email for ${profile.name}: ${email || 'empty'}`);
+                        skippedCount++;
+                        continue;
+                    }
+
+                    // Check if lead already exists
+                    let leadId;
+                    const existingLead = await client.query(`
+                        SELECT id FROM leads WHERE email = $1 AND organization_id = $2
+                    `, [email, organizationId]);
+                    
+                    if (existingLead.rows.length > 0) {
+                        leadId = existingLead.rows[0].id;
+                        
+                        // Update existing lead with new info if available
+                        await client.query(`
+                            UPDATE leads SET 
+                                first_name = COALESCE($1, first_name),
+                                last_name = COALESCE($2, last_name),
+                                company_name = COALESCE($3, company_name),
+                                job_title = COALESCE($4, job_title),
+                                linkedin_url = COALESCE($5, linkedin_url),
+                                industry = COALESCE($6, industry),
+                                location = COALESCE($7, location),
+                                source = $8,
+                                updated_at = NOW(),
+                                updated_by = $9
+                            WHERE id = $10
+                        `, [
+                            profile.firstName || null,
+                            profile.lastName || null, 
+                            profile.company || null,
+                            profile.title || null,
+                            profile.linkedin_url || null,
+                            profile.industry || null,
+                            profile.location || null,
+                            profile.source || 'ContactOut',
+                            actualUserId,
+                            leadId
+                        ]);
+                    } else {
+                        // Create new lead
+                        leadId = uuidv4();
+                        await client.query(`
+                            INSERT INTO leads (
+                                id, organization_id, email, first_name, last_name,
+                                company_name, job_title, linkedin_url, industry, location,
+                                status, source, original_row_data, created_by, updated_by
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                        `, [
+                            leadId, organizationId, email,
+                            profile.firstName?.trim() || null,
+                            profile.lastName?.trim() || null,
+                            profile.company?.trim() || null,
+                            profile.title?.trim() || null,
+                            profile.linkedin_url?.trim() || null,
+                            profile.industry?.trim() || null,
+                            profile.location?.trim() || null,
+                            'new',
+                            profile.source || 'ContactOut',
+                            JSON.stringify(profile),
+                            actualUserId, actualUserId
+                        ]);
+                    }
+
+                    // Add to contact list (if not already in it)
+                    const existingMember = await client.query(`
+                        SELECT id FROM contact_list_members 
+                        WHERE contact_list_id = $1 AND lead_id = $2
+                    `, [listId, leadId]);
+                    
+                    if (existingMember.rows.length === 0) {
+                        await client.query(`
+                            INSERT INTO contact_list_members (
+                                id, contact_list_id, lead_id, status, source, added_by
+                            ) VALUES ($1, $2, $3, 'active', $4, $5)
+                        `, [uuidv4(), listId, leadId, 'ContactOut Search', actualUserId]);
+                    }
+
+                    importedCount++;
+
+                } catch (profileError) {
+                    console.error('Error processing profile:', profileError);
+                    errors.push(`Error processing ${profile.name}: ${profileError.message}`);
+                    skippedCount++;
+                }
+            }
+
+            await client.query('COMMIT');
+
+            return res.status(201).json({
+                success: true,
+                message: `Successfully created contact list "${listName}" with ${importedCount} contacts!`,
+                data: {
+                    listId: listId,
+                    listName: listName,
+                    importedCount,
+                    skippedCount,
+                    errors: errors.slice(0, 10)
+                }
+            });
+            
+        } catch (error) {
+            await client.query('ROLLBACK');
+            console.error('Create from search error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to create contact list from search results'
+            });
+        } finally {
+            client.release();
+        }
+    }
 }
 
 module.exports = new ContactListsController();

@@ -12,7 +12,7 @@
  * - A cron job (though continuous mode is recommended)
  */
 
-const emailJobProcessor = require('./services/emailJobProcessor');
+const emailJobProcessor = require('../services/emailJobProcessor');
 
 // Graceful shutdown handling
 let isShuttingDown = false;
@@ -67,7 +67,7 @@ async function startEmailProcessor() {
     try {
         // Test database connection first
         console.log('🔍 Testing database connection...');
-        const pool = require('./config/database');
+        const pool = require('../config/database');
         const client = await pool.connect();
         await client.query('SELECT 1');
         client.release();
