@@ -68,7 +68,8 @@ const campaignsRoutes = require('./routes/campaigns');
 const contactListsRoutes = require('./routes/contactLists');
 const findymailRoutes = require('./routes/findymail');
 
-
+// Import email job processor
+const emailJobProcessor = require('./services/emailJobProcessor');
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -93,9 +94,17 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📍 Test database connection: http://localhost:${PORT}/api/db-test`);
+  
+  // Start email job processor
+  try {
+    await emailJobProcessor.start();
+    console.log('✅ Email job processor started');
+  } catch (error) {
+    console.error('❌ Failed to start email job processor:', error);
+  }
   
   // Test database connection on startup
   console.log('🔄 Testing database connection...');
@@ -116,5 +125,20 @@ app.listen(PORT, () => {
       console.error('❌ Database connection error:', err);
     });
 });
+
+// Graceful shutdown handling for email processor
+const gracefulShutdown = async (signal) => {
+  console.log(`\n📧 Received ${signal}, stopping email processor...`);
+  try {
+    await emailJobProcessor.stop();
+    console.log('✅ Email processor stopped gracefully');
+  } catch (error) {
+    console.error('❌ Error stopping email processor:', error);
+  }
+  process.exit(0);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 module.exports = app;

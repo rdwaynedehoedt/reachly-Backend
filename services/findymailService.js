@@ -6,8 +6,8 @@
 const axios = require('axios');
 const { Pool } = require('pg');
 
-// Use the same database configuration as the main application
-const dbConfig = require('../config/database');
+// Use the same database configuration as the main application  
+const pool = require('../config/database');
 
 class FindyMailService {
   constructor() {
@@ -39,7 +39,7 @@ class FindyMailService {
    * @returns {Object} Enrichment result with email data
    */
   async findEmailFromLinkedIn(linkedinUrl, organizationId, leadId = null, userId) {
-    const client = await dbConfig.connect();
+    const client = await pool.connect();
     
     try {
       console.log(`🔍 Finding email for LinkedIn: ${linkedinUrl}`);
@@ -162,7 +162,7 @@ class FindyMailService {
    * @returns {Object} Verification result
    */
   async verifyEmail(email, organizationId, userId) {
-    const client = await dbConfig.connect();
+    const client = await pool.connect();
     
     try {
       console.log(`📧 Verifying email: ${email}`);
@@ -267,7 +267,7 @@ class FindyMailService {
    * @returns {Object} Statistics data
    */
   async getOrganizationStats(organizationId) {
-    const client = await dbConfig.connect();
+    const client = await pool.connect();
     
     try {
       const result = await client.query(`
@@ -334,7 +334,7 @@ class FindyMailService {
    * @returns {Object} Enrichment history
    */
   async getLeadEnrichmentHistory(leadId) {
-    const client = await dbConfig.connect();
+    const client = await pool.connect();
     
     try {
       const result = await client.query(`
