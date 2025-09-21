@@ -21,13 +21,43 @@ class FindyMailService {
 
   /**
    * Get authentication headers for FindyMail API
-   * Based on official API documentation: Bearer authentication
+   * Based on API testing: Bearer token authentication confirmed working
    */
   getAuthHeaders() {
     return {
       'Authorization': `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
     };
+  }
+
+  /**
+   * Test API key validity by checking credits
+   * @returns {Object} Credits information or error
+   */
+  async testApiKey() {
+    try {
+      console.log('🔑 Testing FindyMail API key validity...');
+      
+      // Use Bearer authentication (confirmed working method)
+      const response = await axios.get(`${this.baseURL}/api/credits`, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000
+      });
+      return {
+        success: true,
+        method: 'Bearer',
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || error.message,
+        status: error.response?.status
+      };
+    }
   }
 
   /**
@@ -59,9 +89,12 @@ class FindyMailService {
       // Prepare search parameters
       const searchInput = { linkedin_url: linkedinUrl };
       
-      // Call FindyMail API
-      const response = await axios.post(`${this.baseURL}/search/linkedin`, searchInput, {
-        headers: this.getAuthHeaders(),
+      // Call FindyMail API using Bearer authentication (confirmed working method)
+      const response = await axios.post(`${this.baseURL}/api/search/linkedin`, searchInput, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
         timeout: 30000, // 30 second timeout
       });
 
