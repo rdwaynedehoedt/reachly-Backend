@@ -11,7 +11,7 @@ const pool = require('../config/database');
 
 class FindyMailService {
   constructor() {
-    this.baseURL = 'https://app.findymail.com/api';
+    this.baseURL = 'https://app.findymail.com';
     this.apiKey = process.env.FINDYMAIL_API_KEY;
     
     if (!this.apiKey) {
