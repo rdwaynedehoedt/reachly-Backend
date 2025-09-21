@@ -67,6 +67,7 @@ const emailRoutes = require('./routes/email');
 const campaignsRoutes = require('./routes/campaigns');
 const contactListsRoutes = require('./routes/contactLists');
 const findymailRoutes = require('./routes/findymail');
+const analyticsRoutes = require('./routes/analytics');
 
 // Import email job processor
 const emailJobProcessor = require('./services/emailJobProcessor');
@@ -81,6 +82,7 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/campaigns', campaignsRoutes);
 app.use('/api/findymail', findymailRoutes);
 app.use('/api/contact-lists', contactListsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 
 
